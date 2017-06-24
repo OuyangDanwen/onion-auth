@@ -65,7 +65,7 @@ public class Receiver {
 		
         SealedObject sessionKeyObj = (SealedObject)this.fromSender.readObject();
         
-        Cipher pkCipher = Cipher.getInstance("RSA");
+        Cipher pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
         pkCipher.init(Cipher.DECRYPT_MODE, this.pri);
         
         // receive an AES key in "encoded form" from Alice
@@ -93,7 +93,7 @@ public class Receiver {
         
    
         // Alice and Bob use the same AES key/transformation
-        Cipher aesCipher = Cipher.getInstance("AES");
+        Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
         aesCipher.init(Cipher.DECRYPT_MODE, this.aesKeySpec);
 
         plaintext = (String) encryptedMsgObj.getObject(aesCipher);
@@ -104,7 +104,7 @@ public class Receiver {
 
 
 	private void decrypt(File in, File out) throws Exception{
-		Cipher aesCipher = Cipher.getInstance("AES");
+		Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
 		aesCipher.init(Cipher.DECRYPT_MODE, this.aesKeySpec);
 		FileInputStream is = new FileInputStream(in);
 		CipherOutputStream os = new CipherOutputStream(

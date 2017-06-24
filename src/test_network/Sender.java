@@ -41,7 +41,7 @@ public class Sender {
 			sender.pub = sender.getPub(PUBLIC_KEY_FILE);
 			//encrypt session key with public key
 			SealedObject encryptedSessionKey = sender.encryptSessionKey();
-			//Send the encrypted session key
+			//send the encrypted session key
 			sender.sendSessionKey(encryptedSessionKey);
 
 			File plaintext = new File("plaintext");
@@ -57,6 +57,8 @@ public class Sender {
 		  	//encrypt the plaintext and save the ciphertext
 		  	sender.encrypt(plaintext, ciphertext);
 		  	sender.sendCiphertext(plaintext);
+
+
 
       } catch (Exception e) {
       	System.out.println(e.toString());
@@ -90,8 +92,22 @@ public class Sender {
         fromFile.close();  // close input file stream
 	}
 
-	private void sendMessage(String msgType) {
+	private void sendAuthStart() {
+		//16-byte size
+		byte[] size = integerToByteArray(15);
 
+		//16-byte message type
+
+		//padding of 32 bytes of 0s(reserved)
+
+		//32-byte request ID
+
+
+		byte[] b = string.getBytes(StandardCharsets.UTF_8);
+	}
+
+	private void integerToByteArray() {
+		
 	}
 
 	private void readSessionKey(File in) throws Exception {
@@ -103,7 +119,7 @@ public class Sender {
 	private SealedObject encryptSessionKey() throws Exception {
 
 		SealedObject sealedObj = null;
-        Cipher pkCipher = Cipher.getInstance("RSA");
+        Cipher pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
         // RSA imposes size restriction on the object being encrypted (117 bytes).
         // Instead of sealing a Key object which is way over the size restriction,
         // we shall encrypt AES key in its byte format (using getEncoded() method).           
@@ -119,7 +135,7 @@ public class Sender {
 	}
 
 	private void encrypt(File in, File out) throws Exception {
-		Cipher aesCipher = Cipher.getInstance("AES");
+		Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
 		SecretKeySpec aesKeySpec = new SecretKeySpec(aesKey, "AES");
 		aesCipher.init(Cipher.ENCRYPT_MODE, aesKeySpec);
     	CipherInputStream is = new CipherInputStream(
@@ -144,7 +160,7 @@ public class Sender {
         SecretKeySpec aesKeySpec = new SecretKeySpec(this.aesKey, "AES");
             
         // getInstance(crypto algorithm/feedback mode/padding scheme)
-        Cipher aesCipher = Cipher.getInstance("AES");
+        Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
         aesCipher.init(Cipher.ENCRYPT_MODE, aesKeySpec);
         sessionKeyObj = new SealedObject(text, aesCipher);
             
