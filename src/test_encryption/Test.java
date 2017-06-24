@@ -53,7 +53,7 @@ public class Test {
 	    	//Read public key and private key
 	    	test.pri = test.getPri(PRIVATE_KEY_FILE);
 	    	test.pub = test.getPub(PUBLIC_KEY_FILE);
-	    	test.pkCipher = Cipher.getInstance("RSA");
+	    	test.pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
 	    	File encryptedSessionKey = new File(ENCRYPTED_SESSION_KEY_FILE);
 	    	if (encryptedSessionKey.createNewFile()){
 	        	System.out.println("A new file \"encryptedSessionKey\" is created!");
@@ -83,7 +83,7 @@ public class Test {
 	        	System.out.println("File \"ciphertext\" already exists.");
 	      	}
 
-	    	test.aesCipher = Cipher.getInstance("AES");
+	    	test.aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
 	    	test.encrypt(plaintext, ciphertext);
 	    	test.decrypt(ciphertext, recoveredPlaintext);     
 
