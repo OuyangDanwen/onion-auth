@@ -35,11 +35,11 @@ public class Sender {
 			sender.fromReceiver = new ObjectInputStream(skt.getInputStream());
 
 			File sessionKey = new File(SESSION_KEY_FILE);
-			//Read session key from file
+			//read session key from file
 			sender.readSessionKey(sessionKey);
-			//Read public key from file
+			//read public key from file
 			sender.pub = sender.getPub(PUBLIC_KEY_FILE);
-			//Encrypt session key with public key
+			//encrypt session key with public key
 			SealedObject encryptedSessionKey = sender.encryptSessionKey();
 			//Send the encrypted session key
 			sender.sendSessionKey(encryptedSessionKey);
@@ -57,8 +57,6 @@ public class Sender {
 		  	//encrypt the plaintext and save the ciphertext
 		  	sender.encrypt(plaintext, ciphertext);
 		  	sender.sendCiphertext(plaintext);
-
-		  	//TODO: send the ciphertext to receiver instead of saving it
 
       } catch (Exception e) {
       	System.out.println(e.toString());
@@ -105,7 +103,6 @@ public class Sender {
 	private SealedObject encryptSessionKey() throws Exception {
 
 		SealedObject sealedObj = null;
-        // Alice must use the same RSA key/transformation as Bob specified
         Cipher pkCipher = Cipher.getInstance("RSA");
         // RSA imposes size restriction on the object being encrypted (117 bytes).
         // Instead of sealing a Key object which is way over the size restriction,
@@ -147,7 +144,6 @@ public class Sender {
         SecretKeySpec aesKeySpec = new SecretKeySpec(this.aesKey, "AES");
             
         // getInstance(crypto algorithm/feedback mode/padding scheme)
-        // Alice will use the same key/transformation
         Cipher aesCipher = Cipher.getInstance("AES");
         aesCipher.init(Cipher.ENCRYPT_MODE, aesKeySpec);
         sessionKeyObj = new SealedObject(text, aesCipher);
