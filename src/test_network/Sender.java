@@ -23,6 +23,26 @@ public class Sender {
 	private static final String PLAINTEXT_FILE = "plaintext";
 	private byte[] aesKey;
 	private PublicKey pub;
+	private int requestCounter = 0;
+
+	enum MessageType {
+		AUTH_SESSION_START(1), AUTH_SESSION_HS1(2), 
+		AUTH_SESSION_INCOMING_HS1(3), AUTH_SESSION_HS2(4), 
+		AUTH_SESSION_INCOMING_HS2(5), AUTH_LAYER_ENCRYPT(6),
+		AUTH_LAYER_ENCRYPT_RESP(7), AUTH_LAYER_DECRYPT(8), 
+		AUTH_LAYER_DECRYPT_RESP(9), AUTH_SESSION_CLOSE(10),
+		AUTH_SESSION_ERROR(11);
+
+		private int val;
+
+		MessageType(int val) {
+			this.val = val;
+		}
+
+		public int getVal() {
+			return this.val;
+		}
+	}
 
 	public static void main(String[] args) {
 		Sender sender = new Sender();
@@ -39,6 +59,7 @@ public class Sender {
 			sender.readSessionKey(sessionKey);
 			//read public key from file
 			sender.pub = sender.getPub(PUBLIC_KEY_FILE);
+
 			//encrypt session key with public key
 			SealedObject encryptedSessionKey = sender.encryptSessionKey();
 			//send the encrypted session key
@@ -58,6 +79,8 @@ public class Sender {
 		  	sender.encrypt(plaintext, ciphertext);
 		  	sender.sendCiphertext(plaintext);
 
+			sender.sendAuthStart();
+
 
 
       } catch (Exception e) {
@@ -68,7 +91,8 @@ public class Sender {
 	}
 
 	private void sendSessionKey(SealedObject encryptedSessionKey) throws Exception {
-        toReceiver.writeObject(encryptedSessionKey);
+        this.toReceiver.writeObject(encryptedSessionKey);
+        this.toReceiver.flush();
 	}
 
 	private void sendCiphertext(File in) throws Exception {
@@ -83,31 +107,51 @@ public class Sender {
         }
 
         this.toReceiver.writeInt(numLines);
+        this.toReceiver.flush();
 
         for (int i = 0; i < numLines; i++) {
         	SealedObject encryptedText = encryptText(text.get(i));
         	this.toReceiver.writeObject(encryptedText);
+        	this.toReceiver.flush();
         }
         
         fromFile.close();  // close input file stream
 	}
 
-	private void sendAuthStart() {
-		//16-byte size
-		byte[] size = integerToByteArray(15);
+	private void sendAuthStart() throws Exception {
+		//16-byte size with padding, the size of the public key in this case
+		byte[] keyBytes = pub.getEncoded();
+		int size = keyBytes.length;
+		this.toReceiver.writeInt(size);
+		this.toReceiver.flush();
+		System.out.println("Payload size is: " + size);
+		this.toReceiver.write(new byte[12]);
+		this.toReceiver.flush();
 
-		//16-byte message type
 
-		//padding of 32 bytes of 0s(reserved)
+		//16-byte message type with padding
+		this.toReceiver.writeInt(MessageType.AUTH_SESSION_START.getVal());
+		System.out.println("Type value is: " + MessageType.AUTH_SESSION_START.getVal());
+		this.toReceiver.flush();
+		this.toReceiver.write(new byte[12]);
+		this.toReceiver.flush();
 
-		//32-byte request ID
+		//reserved field of 32 bytes of 0s(reserved)
+		this.toReceiver.write(new byte[32]);
+		this.toReceiver.flush();
 
+		//32-byte request ID with padding
+		this.toReceiver.writeInt(requestCounter);
+		System.out.println("Request ID is: " + requestCounter);
+		this.toReceiver.flush();
+		requestCounter++;
+		this.toReceiver.write(new byte[28]);
+		this.toReceiver.flush();
 
-		byte[] b = string.getBytes(StandardCharsets.UTF_8);
-	}
+		//hostkey(public key) in DER format
+		this.toReceiver.write(keyBytes);
+		this.toReceiver.flush();
 
-	private void integerToByteArray() {
-		
 	}
 
 	private void readSessionKey(File in) throws Exception {

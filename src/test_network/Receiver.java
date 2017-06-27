@@ -49,16 +49,41 @@ public class Receiver {
 		    	System.out.println("File \"recoveredPlaintext\" already exists.");
 		  	}
 
-		  	//TODO: receive the ciphertext from sender instead of reading it locally
+		  	//receive the ciphertext from sender
 		  	receiver.receiveCiphertext(recoveredPlaintext);
 
-			//receiver.decrypt(ciphertext, recoveredPlaintext);
+			receiver.receiveMessage();
 
 			receiver.welcomeSkt.close();
 			receiver.skt.close();
 		} catch (Exception e) {
 			System.out.println(e.toString());
 		}
+	}
+
+	private void receiveMessage() throws Exception {
+		//read payload size
+		int size = this.fromSender.readInt();
+		System.out.println("Payload size is: " + size);
+		this.fromSender.skipBytes(12);
+
+		//read message type
+		int typeVal = this.fromSender.readInt();
+		System.out.println("Type value is: " + typeVal);
+		
+		this.fromSender.skipBytes(12+32);
+		int requestID = fromSender.readInt();
+		System.out.println("Request ID is: " + requestID);
+		this.fromSender.skipBytes(28);
+		byte[] keyBytes = new byte[size];
+
+		//read bytes of public key
+		this.fromSender.read(keyBytes, 0, size);
+		
+		//reconstruct public key
+		KeyFactory kf = KeyFactory.getInstance("RSA");
+		PublicKey publicKey = kf.generatePublic(new X509EncodedKeySpec(keyBytes));
+
 	}
 
 	private void receiveSessionKey() throws Exception {
