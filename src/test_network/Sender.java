@@ -188,7 +188,7 @@ public class Sender {
 
 	private void sendIncomingHS1() throws Exception {
 
-		//16-bit size, in this case the size of handshake payload(unencryped session key size)
+		//16-bit size, in this case the size of handshake payload(size of the unencrypted session key)
 		int size = this.aesKey.length;//size in bytes
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toReceiver.write(Arrays.copyOfRange(sizeBytes, 2, 4));
