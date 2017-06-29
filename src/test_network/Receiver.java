@@ -11,6 +11,9 @@ import javax.crypto.*;
 import java.security.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.ByteBuffer;
+import java.math.BigInteger;
+import java.util.*;
 
 public class Receiver {
 	private ObjectOutputStream toSender;
@@ -62,28 +65,52 @@ public class Receiver {
 	}
 
 	private void receiveMessage() throws Exception {
-		//read payload size
-		int size = this.fromSender.readInt();
-		System.out.println("Payload size is: " + size);
-		this.fromSender.skipBytes(12);
+		//read 16-bit payload size
+		byte[] sizeBytes = new byte[2];
+		this.fromSender.read(sizeBytes, 0, 2);
+		int size = new BigInteger(sizeBytes).intValue();
+		System.out.println("Payload size: " + size);
 
-		//read message type
-		int typeVal = this.fromSender.readInt();
-		System.out.println("Type value is: " + typeVal);
-		
-		this.fromSender.skipBytes(12+32);
+		//read 16-bit message type
+		byte[] typeBytes = new byte[2];
+		this.fromSender.read(typeBytes, 0, 2);
+		int typeVal = new BigInteger(typeBytes).intValue();
+		MessageType type = MessageType.values()[typeVal];
+		System.out.println("Message type: " + type);
+
+		switch(type) {
+			case AUTH_SESSION_START: 
+				handleAuthSessionStart(size);
+				break;
+			case AUTH_SESSION_HS1: break;
+			case AUTH_SESSION_INCOMING_HS1: break;
+			case AUTH_SESSION_HS2: break;
+			case AUTH_SESSION_INCOMING_HS2: break;
+			case AUTH_LAYER_ENCRYPT: break;
+			case AUTH_LAYER_ENCRYPT_RESP: break;
+			case AUTH_LAYER_DECRYPT: break;
+			case AUTH_LAYER_DECRYPT_RESP: break;
+			case AUTH_SESSION_CLOSE: break;
+			case AUTH_SESSION_ERROR: break;
+		}
+
+	}
+
+	private void handleAuthSessionStart(int size) throws Exception {
+		//read 32-bit reserved field
+		int reserved = this.fromSender.readInt();
+
+		//read request ID
 		int requestID = fromSender.readInt();
 		System.out.println("Request ID is: " + requestID);
-		this.fromSender.skipBytes(28);
-		byte[] keyBytes = new byte[size];
 
 		//read bytes of public key
+		byte[] keyBytes = new byte[size];
 		this.fromSender.read(keyBytes, 0, size);
 		
 		//reconstruct public key
 		KeyFactory kf = KeyFactory.getInstance("RSA");
 		PublicKey publicKey = kf.generatePublic(new X509EncodedKeySpec(keyBytes));
-
 	}
 
 	private void receiveSessionKey() throws Exception {

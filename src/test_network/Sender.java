@@ -11,6 +11,8 @@ import javax.crypto.*;
 import java.security.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.ByteBuffer;
+import java.math.BigInteger;
 import java.util.*;
 
 
@@ -24,25 +26,6 @@ public class Sender {
 	private byte[] aesKey;
 	private PublicKey pub;
 	private int requestCounter = 0;
-
-	enum MessageType {
-		AUTH_SESSION_START(1), AUTH_SESSION_HS1(2), 
-		AUTH_SESSION_INCOMING_HS1(3), AUTH_SESSION_HS2(4), 
-		AUTH_SESSION_INCOMING_HS2(5), AUTH_LAYER_ENCRYPT(6),
-		AUTH_LAYER_ENCRYPT_RESP(7), AUTH_LAYER_DECRYPT(8), 
-		AUTH_LAYER_DECRYPT_RESP(9), AUTH_SESSION_CLOSE(10),
-		AUTH_SESSION_ERROR(11);
-
-		private int val;
-
-		MessageType(int val) {
-			this.val = val;
-		}
-
-		public int getVal() {
-			return this.val;
-		}
-	}
 
 	public static void main(String[] args) {
 		Sender sender = new Sender();
@@ -90,6 +73,13 @@ public class Sender {
 
 	}
 
+	private void generateSessionKey(File out) throws Exception {
+		KeyGenerator kgen = KeyGenerator.getInstance("AES");
+    	kgen.init(256);
+    	SecretKey key = kgen.generateKey();
+    	this.aesKey = key.getEncoded();
+	}
+
 	private void sendSessionKey(SealedObject encryptedSessionKey) throws Exception {
         this.toReceiver.writeObject(encryptedSessionKey);
         this.toReceiver.flush();
@@ -119,38 +109,54 @@ public class Sender {
 	}
 
 	private void sendAuthStart() throws Exception {
-		//16-byte size with padding, the size of the public key in this case
+
+		//16-bit size, in this case the size of the peer hostkey(public key)
 		byte[] keyBytes = pub.getEncoded();
-		int size = keyBytes.length;
-		this.toReceiver.writeInt(size);
+		int size = keyBytes.length;//size in bytes
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toReceiver.write(Arrays.copyOfRange(sizeBytes, 2, 4));
 		this.toReceiver.flush();
-		System.out.println("Payload size is: " + size);
-		this.toReceiver.write(new byte[12]);
+		System.out.println("Payload size: " + 
+			new BigInteger(Arrays.copyOfRange(sizeBytes, 2, 4)).intValue());
+
+		//16-bit message type 
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_SESSION_START.getVal()).array();
+		this.toReceiver.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		System.out.println("Message type: " + 
+			MessageType.AUTH_SESSION_START);
 		this.toReceiver.flush();
 
-
-		//16-byte message type with padding
-		this.toReceiver.writeInt(MessageType.AUTH_SESSION_START.getVal());
-		System.out.println("Type value is: " + MessageType.AUTH_SESSION_START.getVal());
-		this.toReceiver.flush();
-		this.toReceiver.write(new byte[12]);
+		//32-bit reserved field of 0s
+		this.toReceiver.writeInt(0);
 		this.toReceiver.flush();
 
-		//reserved field of 32 bytes of 0s(reserved)
-		this.toReceiver.write(new byte[32]);
-		this.toReceiver.flush();
-
-		//32-byte request ID with padding
+		//32-bit request ID
 		this.toReceiver.writeInt(requestCounter);
 		System.out.println("Request ID is: " + requestCounter);
 		this.toReceiver.flush();
 		requestCounter++;
-		this.toReceiver.write(new byte[28]);
-		this.toReceiver.flush();
 
 		//hostkey(public key) in DER format
 		this.toReceiver.write(keyBytes);
 		this.toReceiver.flush();
+
+	}
+
+	private void sendHS1() throws Exception {
+		//16-bit size, in this case the size of the unencrypted session key
+		//the receiver has to decrypt it to verify this as there is no easy way to get the size of an SealedObject
+		SealedObject encryptedSessionKey = encryptedSessionKey();
+
+
+
+		//16-bit message type
+
+		//16-bit reserved field of 0s
+
+		//32-bit request ID
+
+		//payload: encrypted session key
 
 	}
 
