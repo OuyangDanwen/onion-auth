@@ -25,7 +25,7 @@ public class Sender {
 	private static final String PLAINTEXT_FILE = "plaintext";
 	private byte[] aesKey;
 	private PublicKey pub;
-	private int requestCounter = 0;
+	private int requestID = 0;//TODO: fix this later
 
 	public static void main(String[] args) {
 		Sender sender = new Sender();
@@ -63,6 +63,8 @@ public class Sender {
 		  	sender.sendCiphertext(plaintext);
 
 			sender.sendAuthStart();
+			sender.sendHS1();
+			sender.sendIncomingHS1();
 
 
 
@@ -132,33 +134,95 @@ public class Sender {
 		this.toReceiver.flush();
 
 		//32-bit request ID
-		this.toReceiver.writeInt(requestCounter);
-		System.out.println("Request ID is: " + requestCounter);
+		this.toReceiver.writeInt(requestID);
+		System.out.println("Request ID is: " + requestID);
 		this.toReceiver.flush();
-		requestCounter++;
 
 		//hostkey(public key) in DER format
-		this.toReceiver.write(keyBytes);
+		this.toReceiver.writeObject(this.pub);
 		this.toReceiver.flush();
 
 	}
 
 	private void sendHS1() throws Exception {
+
 		//16-bit size, in this case the size of the unencrypted session key
 		//the receiver has to decrypt it to verify this as there is no easy way to get the size of an SealedObject
-		SealedObject encryptedSessionKey = encryptedSessionKey();
-
-
+		int size = this.aesKey.length;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toReceiver.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toReceiver.flush();
+		System.out.println("Payload size: " + 
+			new BigInteger(Arrays.copyOfRange(sizeBytes, 2, 4)).intValue());
 
 		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_SESSION_HS1.getVal()).array();
+		this.toReceiver.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		System.out.println("Message type: " + 
+			MessageType.AUTH_SESSION_HS1);
+		this.toReceiver.flush();
 
 		//16-bit reserved field of 0s
+		this.toReceiver.write(new byte[2]);
+		this.toReceiver.flush();
+
+		//16-bit session ID
+		SecureRandom prng = SecureRandom.getInstance("SHA1PRNG");
+		int randomNum = prng.nextInt((1 << 16) - 1);
+		byte[] sessionIDBytes = ByteBuffer.allocate(4).putInt(randomNum).array();
+		this.toReceiver.write(Arrays.copyOfRange(sessionIDBytes, 2, 4));
+		System.out.println("Random session ID generated: " + 
+			new BigInteger(Arrays.copyOfRange(sessionIDBytes, 2, 4)).intValue());	
 
 		//32-bit request ID
+		this.toReceiver.writeInt(requestID);
+		System.out.println("Request ID is: " + requestID);
+		this.toReceiver.flush();
 
 		//payload: encrypted session key
+		this.toReceiver.writeObject(encryptSessionKey());
+		this.toReceiver.flush();
 
 	}
+
+	private void sendIncomingHS1() throws Exception {
+
+		//16-bit size, in this case the size of handshake payload(unencryped session key size)
+		int size = this.aesKey.length;//size in bytes
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toReceiver.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toReceiver.flush();
+		System.out.println("Payload size: " + 
+			new BigInteger(Arrays.copyOfRange(sizeBytes, 2, 4)).intValue());
+
+		//16-bit message type 
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_SESSION_INCOMING_HS1.getVal()).array();
+		this.toReceiver.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		System.out.println("Message type: " + 
+			MessageType.AUTH_SESSION_INCOMING_HS1);
+		this.toReceiver.flush();
+
+		//32-bit reserved field of 0s
+		this.toReceiver.writeInt(0);
+		this.toReceiver.flush();
+
+		//32-bit request ID
+		this.toReceiver.writeInt(requestID);
+		System.out.println("Request ID is: " + requestID);
+		this.toReceiver.flush();
+
+		//forwarded handshake payload(encryped session key)
+		this.toReceiver.writeObject(encryptSessionKey());
+		this.toReceiver.flush();
+
+	}
+
+	private void sendHS2() throws Exception {
+
+	}
+
 
 	private void readSessionKey(File in) throws Exception {
 		FileInputStream fis = new FileInputStream(in);

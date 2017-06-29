@@ -56,6 +56,8 @@ public class Receiver {
 		  	receiver.receiveCiphertext(recoveredPlaintext);
 
 			receiver.receiveMessage();
+			receiver.receiveMessage();
+			receiver.receiveMessage();
 
 			receiver.welcomeSkt.close();
 			receiver.skt.close();
@@ -75,6 +77,7 @@ public class Receiver {
 		byte[] typeBytes = new byte[2];
 		this.fromSender.read(typeBytes, 0, 2);
 		int typeVal = new BigInteger(typeBytes).intValue();
+		System.out.println("Type value: " + typeVal);
 		MessageType type = MessageType.values()[typeVal];
 		System.out.println("Message type: " + type);
 
@@ -82,8 +85,12 @@ public class Receiver {
 			case AUTH_SESSION_START: 
 				handleAuthSessionStart(size);
 				break;
-			case AUTH_SESSION_HS1: break;
-			case AUTH_SESSION_INCOMING_HS1: break;
+			case AUTH_SESSION_HS1:
+				handleHS1(size);
+				break;
+			case AUTH_SESSION_INCOMING_HS1: 
+				handleIncomingHS1(size);
+				break;
 			case AUTH_SESSION_HS2: break;
 			case AUTH_SESSION_INCOMING_HS2: break;
 			case AUTH_LAYER_ENCRYPT: break;
@@ -100,18 +107,88 @@ public class Receiver {
 		//read 32-bit reserved field
 		int reserved = this.fromSender.readInt();
 
-		//read request ID
+		//read 32-bit request ID
 		int requestID = fromSender.readInt();
 		System.out.println("Request ID is: " + requestID);
 
-		//read bytes of public key
-		byte[] keyBytes = new byte[size];
-		this.fromSender.read(keyBytes, 0, size);
+		//read the hostkey(public key) as an object
+		PublicKey publicKey = (PublicKey)this.fromSender.readObject();
+
+		//verify the size of the hostkey
+		if (publicKey.getEncoded().length != size) {
+			System.out.println("Hostkey size does not match!");
+		} else {
+			System.out.println("Hostkey size check passed, okay to proceed!");
+		}
+
+		// //read bytes of public key
+		// byte[] keyBytes = new byte[size];
+		// this.fromSender.read(keyBytes, 0, size);
 		
-		//reconstruct public key
-		KeyFactory kf = KeyFactory.getInstance("RSA");
-		PublicKey publicKey = kf.generatePublic(new X509EncodedKeySpec(keyBytes));
+		// //reconstruct public key
+		// KeyFactory kf = KeyFactory.getInstance("RSA");
+		// PublicKey publicKey = kf.generatePublic(new X509EncodedKeySpec(keyBytes));
 	}
+
+	private void handleHS1(int size) throws Exception {
+		//read 16-bit reserved field
+		byte[] reservedBytes = new byte[2];
+		this.fromSender.read(reservedBytes, 0, 2);
+
+		//read 16-bit session ID
+		byte[] sessionIDBytes = new byte[2];
+		this.fromSender.read(sessionIDBytes, 0, 2);
+		int sessionID = new BigInteger(sessionIDBytes).intValue();
+		System.out.println("Random session ID: " + sessionID);
+
+		//read 32-bit request ID
+		int requestID = this.fromSender.readInt();
+		System.out.println("Request ID: " + requestID);
+
+		//read encrypted session key as a sealed object
+		SealedObject sessionKeyObj = (SealedObject)this.fromSender.readObject();
+
+		//decrypt the sealed object
+		Cipher pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        pkCipher.init(Cipher.DECRYPT_MODE, this.pri);
+        byte[] rawKey = (byte[])sessionKeyObj.getObject(pkCipher);
+
+        //verify the size of session key in encoded form and recontruct the session key if its size matches
+        if (rawKey.length != size) {
+        	System.out.println("Session key size does not match!");
+        } else {
+        	System.out.println("Session size check passed, okay to reconstruct!");
+        	SecretKeySpec keySpec = new SecretKeySpec(rawKey, 0, rawKey.length, "AES");
+    	}	
+	}
+
+	private void handleIncomingHS1(int size) throws Exception {
+		//read 32-bit reserved field
+		int reserved = this.fromSender.readInt();
+
+		//read 32-bit request ID
+		int requestID = fromSender.readInt();
+		System.out.println("Request ID: " + requestID);
+
+		//read encrypted session key as a sealed object
+		SealedObject sessionKeyObj = (SealedObject)this.fromSender.readObject();
+
+		//decrypt the sealed object
+		Cipher pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        pkCipher.init(Cipher.DECRYPT_MODE, this.pri);
+        byte[] rawKey = (byte[])sessionKeyObj.getObject(pkCipher);
+
+		//verify the size of session key in encoded form and recontruct the session key if its size matches
+        if (rawKey.length != size) {
+        	System.out.println("Session key size does not match!");
+        } else {
+        	System.out.println("Session size check passed, okay to reconstruct!");
+        	SecretKeySpec keySpec = new SecretKeySpec(rawKey, 0, rawKey.length, "AES");
+    	}	
+
+	}
+
+
 
 	private void receiveSessionKey() throws Exception {
 		
@@ -120,7 +197,7 @@ public class Receiver {
         Cipher pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
         pkCipher.init(Cipher.DECRYPT_MODE, this.pri);
         
-        // receive an AES key in "encoded form" from Alice
+        // receive an AES key in "encoded form" 
         byte[] rawKey = (byte[])sessionKeyObj.getObject(pkCipher);
         // reconstruct AES key from encoded form
         this.aesKeySpec = new SecretKeySpec(rawKey, 0, rawKey.length, "AES");
@@ -143,8 +220,6 @@ public class Receiver {
             
         String plaintext = null;
         
-   
-        // Alice and Bob use the same AES key/transformation
         Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
         aesCipher.init(Cipher.DECRYPT_MODE, this.aesKeySpec);
 
