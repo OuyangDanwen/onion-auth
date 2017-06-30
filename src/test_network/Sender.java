@@ -14,6 +14,9 @@ import java.nio.file.Paths;
 import java.nio.ByteBuffer;
 import java.math.BigInteger;
 import java.util.*;
+import javax.crypto.KeyAgreement;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 
 
 public class Sender {
@@ -62,6 +65,7 @@ public class Sender {
 		  	sender.encrypt(plaintext, ciphertext);
 		  	sender.sendCiphertext(plaintext);
 
+		  	sender.initiateDHKeyExchange();
 			sender.sendAuthStart();
 			sender.sendHS1();
 			sender.sendIncomingHS1();
@@ -220,6 +224,34 @@ public class Sender {
 	}
 
 	private void sendHS2() throws Exception {
+
+	}
+
+	private void initiateDHKeyExchange() throws Exception {
+		//generate DH key pairs(public key and private key)
+		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
+		keyPairGenerator.initialize(1024);
+		KeyPair keyPair = keyPairGenerator.generateKeyPair();
+		PrivateKey privateKey = keyPair.getPrivate();
+		PublicKey publicKey = keyPair.getPublic();
+
+		//send own DH public key to the other peer
+		this.toReceiver.writeObject(publicKey);
+		this.toReceiver.flush();
+
+		//receive DH public key from the other peer
+		PublicKey peerPub = (PublicKey)this.fromReceiver.readObject();
+
+		//generate the common secret
+		KeyAgreement keyAgreement = KeyAgreement.getInstance("DH");
+		keyAgreement.init(privateKey);
+        keyAgreement.doPhase(peerPub, true);
+
+		//construct the 256-bit common AES key 
+		byte[] rawAESKey = new byte[32];
+		byte[] rawSecret = keyAgreement.generateSecret();
+		System.arraycopy(rawSecret, 0, rawAESKey, 0, rawAESKey.length);
+		SecretKeySpec keySpec = new SecretKeySpec(rawAESKey, 0, rawAESKey.length, "AES");
 
 	}
 

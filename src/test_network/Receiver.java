@@ -14,6 +14,9 @@ import java.nio.file.Paths;
 import java.nio.ByteBuffer;
 import java.math.BigInteger;
 import java.util.*;
+import javax.crypto.KeyAgreement;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 
 public class Receiver {
 	private ObjectOutputStream toSender;
@@ -54,6 +57,8 @@ public class Receiver {
 
 		  	//receive the ciphertext from sender
 		  	receiver.receiveCiphertext(recoveredPlaintext);
+
+		  	receiver.handleDHKeyExchange();
 
 			receiver.receiveMessage();
 			receiver.receiveMessage();
@@ -121,13 +126,6 @@ public class Receiver {
 			System.out.println("Hostkey size check passed, okay to proceed!");
 		}
 
-		// //read bytes of public key
-		// byte[] keyBytes = new byte[size];
-		// this.fromSender.read(keyBytes, 0, size);
-		
-		// //reconstruct public key
-		// KeyFactory kf = KeyFactory.getInstance("RSA");
-		// PublicKey publicKey = kf.generatePublic(new X509EncodedKeySpec(keyBytes));
 	}
 
 	private void handleHS1(int size) throws Exception {
@@ -186,6 +184,33 @@ public class Receiver {
         	SecretKeySpec keySpec = new SecretKeySpec(rawKey, 0, rawKey.length, "AES");
     	}	
 
+	}
+
+	private void handleDHKeyExchange() throws Exception {
+		//generate DH key pairs(public key and private key)
+		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
+		keyPairGenerator.initialize(1024);
+		KeyPair keyPair = keyPairGenerator.generateKeyPair();
+		PrivateKey privateKey = keyPair.getPrivate();
+		PublicKey publicKey = keyPair.getPublic();
+
+		//receive DH public key from the other peer
+		PublicKey peerPub = (PublicKey)this.fromSender.readObject();
+
+		//send own DH public key to the other peer
+		this.toSender.writeObject(publicKey);
+		this.toSender.flush();
+
+		//generate the common secret
+		KeyAgreement keyAgreement = KeyAgreement.getInstance("DH");
+		keyAgreement.init(privateKey);
+        keyAgreement.doPhase(peerPub, true);
+
+		//construct the 256-bit common AES key 
+		byte[] rawAESKey = new byte[32];
+		byte[] rawSecret = keyAgreement.generateSecret();
+		System.arraycopy(rawSecret, 0, rawAESKey, 0, rawAESKey.length);
+		SecretKeySpec keySpec = new SecretKeySpec(rawAESKey, 0, rawAESKey.length, "AES");
 	}
 
 
