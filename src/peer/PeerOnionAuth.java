@@ -122,7 +122,7 @@ public class PeerOnionAuth {
 
 		//verify the size of the peer hostkey
 		if (this.peerHostkey.getEncoded().length != size) {
-			System.out.println("Hostkey size does not match!");
+			System.out.println("Hostkey size size does not match!");
 		} else {
 			System.out.println("Hostkey size check passed, okay to proceed!");
 		}
