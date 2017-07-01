@@ -20,60 +20,297 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 
 public class PeerOnionAuth {
-	final private ObjectOutputStream toOnion;
-	final private ObjectInputStream fromOnion;
-	final private ServerSocket welcomeSkt;  // wait for sender to connect
-	final private Socket skt;
-	private byte[] aesKey;
-	private SecretKeySpec aesKeySpec;
+	private ObjectOutputStream toOnion;
+	private ObjectInputStream fromOnion;
+	private ServerSocket welcomeSkt;  // wait for sender to connect
+	private Socket skt;
 	private PrivateKey dhPri;
 	private PublicKey dhPub;
-	private PublicKey hostkey;
 	final private KeyFactory rsaKeyFactory;
 	final private KeyFactory aesKeyFactory;
-	final private Cipher pkCipher;
 	final private Cipher aesCipher;
+	private MessageDigest md5;
+	private HashMap<Integer, MessageType> sessionTypeMap; // map session ID to message type
+	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
+	private SecureRandom prng;
+	private PublicKey peerHostkey;
+	private PrivateKey rsaPri;
+	private PublicKey rsaPub;
 
-	public PeerOnionAuth(int portNum) throws Exception {
-		//set up
-		//1.network
+	private int requestID = 12;
+
+	public PeerOnionAuth() throws Exception {
+		//crypto set up
+	    this.rsaKeyFactory = KeyFactory.getInstance("RSA");
+		this.aesKeyFactory = KeyFactory.getInstance("AES");
+		this.aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+		this.sessionTypeMap = new HashMap<Integer, MessageType>();
+		this.sessionKeyMap = new HashMap<Integer, SecretKeySpec>();
+		this.prng = SecureRandom.getInstance("SHA1PRNG");
+		this.md5 = MessageDigest.getInstance("MD5");
+		this.generateRSAKeyPair();
+	}
+
+	public void listenForConnection(int portNum) throws Exception {
 		this.welcomeSkt = new ServerSocket(portNum);
 		System.out.println("Onion Authentication listens at port " + portNum);
 		this.skt = this.welcomeSkt.accept();
 		System.out.println("Incoming connection from Onion accepted");
 		this.toOnion = new ObjectOutputStream(this.skt.getOutputStream());
 		this.fromOnion = new ObjectInputStream(this.skt.getInputStream());
-		//2.crypto
-	    this.rsaKeyFactory = KeyFactory.getInstance("RSA");
-		this.aesKeyFactory = KeyFactory.getInstance("AES");
-		this.aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-		this.pkCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+		do {
+			receiveMessage();
+		} while (true);
+
 	}
 
 	public void readHostKey(String hostkeyFile) throws Exception {
 		byte[] keyBytes = Files.readAllBytes(Paths.get(hostkeyFile));
 	    final X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
 	    KeyFactory kf = KeyFactory.getInstance("RSA");
-	    this.hostkey = kf.generatePublic(spec);
+	    this.peerHostkey = kf.generatePublic(spec);
 	}
 
-	public void handleAuthStart() throws Exception {
+	private void receiveMessage() throws Exception {
+		//read 16-bit payload size
+		byte[] sizeBytes = new byte[2];
+		this.fromOnion.read(sizeBytes, 0, 2);
+		int size = new BigInteger(sizeBytes).intValue();
+		System.out.println("Payload size: " + size);
 
+		//read 16-bit message type
+		byte[] typeBytes = new byte[2];
+		this.fromOnion.read(typeBytes, 0, 2);
+		int typeVal = new BigInteger(typeBytes).intValue();
+		System.out.println("Type value: " + typeVal);
+		MessageType type = MessageType.values()[typeVal];
+		System.out.println("Message type: " + type);
+
+		switch(type) {
+			case AUTH_SESSION_START: 
+				handleAuthStart(size);
+				break;
+			case AUTH_SESSION_HS1:
+				
+				break;
+			case AUTH_SESSION_INCOMING_HS1: 
+				handleIncomingHS1(size);
+				break;
+			case AUTH_SESSION_HS2: break;
+			case AUTH_SESSION_INCOMING_HS2: break;
+			case AUTH_LAYER_ENCRYPT: break;
+			case AUTH_LAYER_ENCRYPT_RESP: break;
+			case AUTH_LAYER_DECRYPT: break;
+			case AUTH_LAYER_DECRYPT_RESP: break;
+			case AUTH_SESSION_CLOSE: break;
+			case AUTH_SESSION_ERROR: break;
+		}
+
+	}
+
+	public void handleAuthStart(int size) throws Exception {
+		//read 32-bit reserved field
+		int reserved = this.fromOnion.readInt();
+
+		//read 32-bit request ID
+		int requestID = fromOnion.readInt();
+
+		//read the hostkey(public key) as an object and save it for future use
+		this.peerHostkey = (PublicKey)this.fromOnion.readObject();
+
+		//verify the size of the peer hostkey
+		if (this.peerHostkey.getEncoded().length != size) {
+			System.out.println("Hostkey size does not match!");
+		} else {
+			System.out.println("Hostkey size check passed, okay to proceed!");
+		}
+
+		//reply to SESSION AUTH START
+		this.sendHS1();
 	}
 
 	private void sendHS1() throws Exception {
+		//16-bit size, in this case the size of the handshake payload
+		this.generateDHKeyPair();
+		int size = this.dhPub.getEncoded().length;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_SESSION_HS1.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit reserved field of 0s
+		this.toOnion.write(new byte[2]);
+		this.toOnion.flush();
+
+		//16-bit session ID
+		int sessionID = this.prng.nextInt((1 << 16) - 1);
+		byte[] sessionIDBytes = ByteBuffer.allocate(4).putInt(sessionID).array();
+		this.toOnion.write(Arrays.copyOfRange(sessionIDBytes, 2, 4));
+		this.toOnion.flush();
+		this.sessionTypeMap.put(sessionID, MessageType.AUTH_SESSION_HS1);
+
+		//32-bit request ID
+		this.toOnion.writeInt(requestID);
+		this.toOnion.flush();
+
+		//handshake payload
+		this.toOnion.writeObject(this.dhPub);
+		this.toOnion.flush();
 
 	}
 
-	public void handleIncomingHS1() throws Exception {
 
+
+	public void handleIncomingHS1(int size) throws Exception {
+		//read 32-bit reserved field
+		int reserved = this.fromOnion.readInt();
+
+		//read 32-bit request ID
+		int requestID = fromOnion.readInt();
+
+		//read HS1 handshake payload
+		PublicKey peerDhPub = (PublicKey)this.fromOnion.readObject();
+
+		//verify the size of the payload
+		if (peerDhPub.getEncoded().length != size) {
+			System.out.println("Peer DH public key size does not match!");
+		} else {
+			System.out.println("Peer DH public key size check passed, okay to proceed!");
+		}
+
+
+		//generate common session key
+		SecretKeySpec aesKeySpec = this.generateCommonSecretKey(peerDhPub);
+
+		//reply to INCOMING HS1
+		int sessionID = this.prng.nextInt((1 << 16) - 1);
+		this.sessionTypeMap.put(sessionID, MessageType.AUTH_SESSION_HS2);
+		this.sessionKeyMap.put(sessionID, aesKeySpec);
+		this.sendHS2(sessionID);
 	}
 
-	private void sendHS2() throws Exception {
+	private void sendHS2(int sessionID) throws Exception {
+		
+		//generate handshake payload signed (session key hash + own DH public key)
 
+		//generate key hansh
+		SecretKeySpec aesKeySpec = this.sessionKeyMap.get(sessionID);
+		this.md5.update(aesKeySpec.getEncoded());
+		byte[] digest = this.md5.digest();
+		this.md5.reset();
+
+		//generate signature
+		Signature dsa = Signature.getInstance("SHA1withDSA", "SUN");
+		dsa.initSign(this.rsaPri);
+		byte[] payload = new byte[digest.length + this.dhPub.getEncoded().length];
+		System.arraycopy(digest, 0, payload, 0, digest.length);
+		System.arraycopy(this.dhPub.getEncoded(), 0, payload, digest.length, this.dhPub.getEncoded().length);
+		dsa.update(payload);
+		byte[] signature = dsa.sign();
+
+		//16-bit size, in this case the size of the handshake payload
+		int size = signature.length + digest.length + this.dhPub.getEncoded().length;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_SESSION_HS2.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit reserved field
+		this.toOnion.write(new byte[2]);
+		this.toOnion.flush();
+
+		//16-bit session ID
+		byte[] sessionIDBytes = ByteBuffer.allocate(4).putInt(sessionID).array();
+		this.toOnion.write(Arrays.copyOfRange(sessionIDBytes, 2, 4));
+		this.toOnion.flush();
+
+
+		//32-request ID
+		this.toOnion.writeInt(requestID);
+		this.toOnion.flush();
+
+		//write the payload and signature
+		this.toOnion.writeObject(this.dhPub);
+		this.toOnion.writeInt(digest.length);
+		this.toOnion.write(digest);
+		this.toOnion.writeInt(signature.length);
+		this.toOnion.write(signature);
+		this.toOnion.flush();
 	}
 
-	public void handleIncomingHS2() throws Exception {
+	public void handleIncomingHS2(int size) throws Exception {
+		//read 16-bit reserved field
+		byte[] reservedBytes = new byte[2];
+		this.fromOnion.read(reservedBytes, 0, 2);
+
+		//read 16-bit session ID
+		byte[] sessionIDBytes = new byte[3];
+		byte[] bytes = new byte[2];
+		this.fromOnion.read(bytes, 0, 2);
+		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		int sessionID = new BigInteger(sessionIDBytes).intValue();
+
+		//read 32-request ID
+		int requestID = this.fromOnion.readInt();
+
+		//read HS2 payload (session key hash + peer DH public key)
+		PublicKey peerDhPub = (PublicKey)this.fromOnion.readObject();
+		int digestSize = this.fromOnion.readInt();
+		byte[] digest = new byte[digestSize];
+		this.fromOnion.read(digest, 0, digestSize);
+		int signatureSize = this.fromOnion.readInt();
+		byte[] signature = new byte[signatureSize];
+		this.fromOnion.read(signature, 0, signatureSize);
+
+		//verify the size of the payload
+		if (size != digestSize + signatureSize + peerDhPub.getEncoded().length) {
+			System.out.println("Handshake payload size does not match!");
+		} else {
+			System.out.println("Handshake payload size matches, okay to proceed!");
+		}
+
+		//generate common session key
+		SecretKeySpec aesKeySpec = this.generateCommonSecretKey(peerDhPub);
+
+		//verify key hash
+		this.md5.update(aesKeySpec.getEncoded());
+		byte[] computedDigest = this.md5.digest();
+		this.md5.reset();
+		if (!Arrays.equals(digest, computedDigest)) {
+			System.out.println("Session key hash does not match!");
+		} else {
+			System.out.println("Session key hash matches, okay to proceed!");
+		}
+
+		//verify signature
+		Signature sig = Signature.getInstance("SHA1withDSA", "SUN");
+		sig.initVerify(this.rsaPub);
+		byte[] payload = new byte[computedDigest.length + peerDhPub.getEncoded().length];
+		System.arraycopy(computedDigest, 0, payload, 0, computedDigest.length);
+		System.arraycopy(peerDhPub.getEncoded(), 0, payload, 
+			computedDigest.length, peerDhPub.getEncoded().length);
+		sig.update(payload);
+		if (sig.verify(signature)) {
+			System.out.println("Payload signature does not match!");
+		} else {
+			System.out.println("Payload signature matches, okay to proceed!");
+		}
+
+		//check if session ID exists, it should match one of the session IDs from HS1
+		MessageType type = this.sessionTypeMap.get(sessionID);
+		if (type == MessageType.AUTH_SESSION_HS1) {
+			this.sessionKeyMap.put(sessionID, aesKeySpec);
+		}
 
 	}
 
@@ -81,7 +318,7 @@ public class PeerOnionAuth {
 
 	}
 
-	private void sendLayerEncryptRESP() {
+	private void sendLayerEncryptRESP() throws Exception {
 
 	}
 
@@ -99,6 +336,35 @@ public class PeerOnionAuth {
 
 	private void sendAuthError() throws Exception {
 
+	}
+
+	private void generateDHKeyPair() throws Exception {
+		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
+		keyPairGenerator.initialize(1024);
+		KeyPair keyPair = keyPairGenerator.generateKeyPair();
+		this.dhPri = keyPair.getPrivate();
+		this.dhPub = keyPair.getPublic();
+	}
+
+	private void generateRSAKeyPair() throws Exception {
+		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+		keyPairGenerator.initialize(2048);
+		KeyPair keyPair = keyPairGenerator.generateKeyPair();
+		this.rsaPri = keyPair.getPrivate();
+		this.rsaPub = keyPair.getPublic();
+	}
+
+	private SecretKeySpec generateCommonSecretKey(PublicKey peerDhPub) throws Exception {
+		//generate the common secret
+		KeyAgreement keyAgreement = KeyAgreement.getInstance("DH");
+		keyAgreement.init(this.dhPri);
+        keyAgreement.doPhase(peerDhPub, true);
+
+		//construct the 256-bit common AES key 
+		byte[] rawAESKey = new byte[32];
+		byte[] rawSecret = keyAgreement.generateSecret();
+		System.arraycopy(rawSecret, 0, rawAESKey, 0, rawAESKey.length);
+		return new SecretKeySpec(rawAESKey, 0, rawAESKey.length, "AES");
 	}
 
 }
