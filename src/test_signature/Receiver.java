@@ -139,6 +139,8 @@ public class Receiver {
 
 	// Sends the message, along with the signature, to the other peer
 	private void sendMessageWithSignature(byte[] signature) throws Exception {
+		toSender.writeInt(dhPubKey.getEncoded().length);
+		toSender.flush();
 		toSender.write(message);
 		toSender.flush();
 		toSender.write(signature);
