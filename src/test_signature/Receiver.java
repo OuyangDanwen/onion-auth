@@ -123,7 +123,7 @@ public class Receiver {
 		System.arraycopy(a, 0, message, 0, a.length);
 		System.arraycopy(b, 0, message, a.length, b.length);
 		System.arraycopy(c, 0, message, a.length+b.length, c.length);
-		
+
 		System.out.println("Receiver: DH pub key length = " + a.length);
 		System.out.println("Receiver: RSA pub key length = " + b.length);
 		System.out.println("Receiver: Hashed secret key length = " + c.length);
