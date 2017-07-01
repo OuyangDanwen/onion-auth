@@ -84,22 +84,18 @@ public class PeerOnionAuth {
 		byte[] typeBytes = new byte[2];
 		this.fromOnion.read(typeBytes, 0, 2);
 		int typeVal = new BigInteger(typeBytes).intValue();
-		System.out.println("Type value: " + typeVal);
 		MessageType type = MessageType.values()[typeVal];
-		System.out.println("Message type: " + type);
 
 		switch(type) {
 			case AUTH_SESSION_START: 
 				handleAuthStart(size);
 				break;
-			case AUTH_SESSION_HS1:
-				
-				break;
 			case AUTH_SESSION_INCOMING_HS1: 
 				handleIncomingHS1(size);
 				break;
-			case AUTH_SESSION_HS2: break;
-			case AUTH_SESSION_INCOMING_HS2: break;
+			case AUTH_SESSION_INCOMING_HS2: 
+				handleIncomingHS2(size);
+				break;
 			case AUTH_LAYER_ENCRYPT: break;
 			case AUTH_LAYER_ENCRYPT_RESP: break;
 			case AUTH_LAYER_DECRYPT: break;
@@ -200,7 +196,7 @@ public class PeerOnionAuth {
 		
 		//generate handshake payload signed (session key hash + own DH public key)
 
-		//generate key hansh
+		//generate key hash
 		SecretKeySpec aesKeySpec = this.sessionKeyMap.get(sessionID);
 		this.sha256.update(aesKeySpec.getEncoded());
 		byte[] digest = this.sha256.digest();
@@ -215,7 +211,7 @@ public class PeerOnionAuth {
 		dsa.update(payload);
 		byte[] signature = dsa.sign();
 
-		//16-bit size, in this case the size of the signature
+		//16-bit size, in this case the size of the handshake payload
 		int size = signature.length + this.dhPub.getEncoded().length + digest.length;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
