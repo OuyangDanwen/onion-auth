@@ -29,7 +29,7 @@ public class PeerOnionAuth {
 	final private KeyFactory rsaKeyFactory;
 	final private KeyFactory aesKeyFactory;
 	final private Cipher aesCipher;
-	private MessageDigest md5;
+	private MessageDigest sha256;
 	private HashMap<Integer, MessageType> sessionTypeMap; // map session ID to message type
 	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
 	private SecureRandom prng;
@@ -47,7 +47,7 @@ public class PeerOnionAuth {
 		this.sessionTypeMap = new HashMap<Integer, MessageType>();
 		this.sessionKeyMap = new HashMap<Integer, SecretKeySpec>();
 		this.prng = SecureRandom.getInstance("SHA1PRNG");
-		this.md5 = MessageDigest.getInstance("MD5");
+		this.sha256 = MessageDigest.getInstance("SHA-256");
 		this.generateRSAKeyPair();
 	}
 
@@ -202,9 +202,9 @@ public class PeerOnionAuth {
 
 		//generate key hansh
 		SecretKeySpec aesKeySpec = this.sessionKeyMap.get(sessionID);
-		this.md5.update(aesKeySpec.getEncoded());
-		byte[] digest = this.md5.digest();
-		this.md5.reset();
+		this.sha256.update(aesKeySpec.getEncoded());
+		byte[] digest = this.sha256.digest();
+		this.sha256.reset();
 
 		//generate signature
 		Signature dsa = Signature.getInstance("SHA256withRSA");
@@ -216,7 +216,7 @@ public class PeerOnionAuth {
 		byte[] signature = dsa.sign();
 
 		//16-bit size, in this case the size of the signature
-		int size = signature.length;
+		int size = signature.length + this.dhPub.getEncoded().length + digest.length;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
 		this.toOnion.flush();
@@ -267,19 +267,26 @@ public class PeerOnionAuth {
 
 		//read HS2 payload (session key hash + peer DH public key)
 		PublicKey peerDhPub = (PublicKey)this.fromOnion.readObject();
-		byte[] digest = new byte[16];
-		this.fromOnion.read(digest, 0, 16);
-		byte[] signature = new byte[size];
-		this.fromOnion.read(signature, 0, size);
+		byte[] digest = new byte[32];
+		this.fromOnion.read(digest, 0, 32);
+		byte[] signature = new byte[256];
+		this.fromOnion.read(signature, 0, 256);
+
+		//verify payload size
+		if (!(peerDhPub.getEncoded().length + signature.length + digest.length == size)) {
+			System.out.println("Handshake payload does not match!");
+		} else {
+			System.out.println("Handshake payload size matches, okay to proceed!");
+		}
 
 
 		//generate common session key
 		SecretKeySpec aesKeySpec = this.generateCommonSecretKey(peerDhPub);
 
 		//verify key hash
-		this.md5.update(aesKeySpec.getEncoded());
-		byte[] computedDigest = this.md5.digest();
-		this.md5.reset();
+		this.sha256.update(aesKeySpec.getEncoded());
+		byte[] computedDigest = this.sha256.digest();
+		this.sha256.reset();
 		if (!Arrays.equals(digest, computedDigest)) {
 			System.out.println("Session key hash does not match!");
 		} else {

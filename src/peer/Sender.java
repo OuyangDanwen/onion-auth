@@ -76,8 +76,8 @@ public class Sender {
 
 	private void receiveDHPayload() throws Exception {
 		this.peerDhPub = (PublicKey)this.fromReceiver.readObject();
-		byte[] digest = new byte[16];
-		this.fromReceiver.read(digest, 0, 16);
+		byte[] digest = new byte[32];
+		this.fromReceiver.read(digest, 0, 32);
 		int signatureSize = this.fromReceiver.readInt();
 		byte[] signature = new byte[signatureSize];
 		System.out.println("signature size: " + signatureSize);
@@ -86,7 +86,7 @@ public class Sender {
 		SecretKeySpec sessionKey = this.generateCommonSecretKey(this.peerDhPub);
 
 		//verify digest
-		MessageDigest md5 = MessageDigest.getInstance("MD5");
+		MessageDigest md5 = MessageDigest.getInstance("SHA-256");
 		md5.update(sessionKey.getEncoded());
 		byte[] computedDigest = md5.digest();
 		md5.reset();

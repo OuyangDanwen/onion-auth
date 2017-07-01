@@ -40,7 +40,7 @@ public class Receiver {
 			receiver.skt = receiver.welcomeSkt.accept();
 			receiver.toSender = new ObjectOutputStream(receiver.skt.getOutputStream());
 			receiver.fromSender = new ObjectInputStream(receiver.skt.getInputStream());
-			receiver.md5 = MessageDigest.getInstance("MD5");
+			receiver.md5 = MessageDigest.getInstance("SHA-256");
 		  	//receiver.handleDHKeyExchange();
 		  	receiver.start();
 		  	receiver.sendPub();
@@ -77,12 +77,14 @@ public class Receiver {
 		//generate key hansh
 		this.md5.update(this.sessionKey.getEncoded());
 		byte[] digest = this.md5.digest();
+		System.out.println("Digest size: " + digest.length);
 		this.md5.reset();
 
 		//generate signature
 		Signature dsa = Signature.getInstance("SHA256withRSA");
 		dsa.initSign(this.rsaPri);
 		byte[] payload = new byte[digest.length + this.dhPub.getEncoded().length];
+		System.out.println("DH public key size: " + this.dhPub.getEncoded().length);
 		System.out.println("payload size: " + payload.length);
 		System.arraycopy(digest, 0, payload, 0, digest.length);
 		System.arraycopy(this.dhPub.getEncoded(), 0, payload, digest.length, this.dhPub.getEncoded().length);
