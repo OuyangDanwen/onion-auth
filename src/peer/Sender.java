@@ -42,9 +42,6 @@ public class Sender {
 			sender.sendDH();
 			sender.receiveDHPayload();
 
-
-
-
       } catch (Exception e) {
       	System.out.println(e.toString());
       }
@@ -53,7 +50,7 @@ public class Sender {
 	}
 
 	private void start() throws Exception {
-		this.toReceiver.writeInt(100);
+		this.toReceiver.writeInt(100);//just write 100 to start a conversation
 		this.toReceiver.flush();
 	}
 
@@ -78,10 +75,8 @@ public class Sender {
 		this.peerDhPub = (PublicKey)this.fromReceiver.readObject();
 		byte[] digest = new byte[32];
 		this.fromReceiver.read(digest, 0, 32);
-		int signatureSize = this.fromReceiver.readInt();
-		byte[] signature = new byte[signatureSize];
-		System.out.println("signature size: " + signatureSize);
-		this.fromReceiver.read(signature, 0, signatureSize);
+		byte[] signature = new byte[256];
+		this.fromReceiver.read(signature, 0, 256);
 
 		SecretKeySpec sessionKey = this.generateCommonSecretKey(this.peerDhPub);
 
@@ -101,7 +96,6 @@ public class Sender {
 		Signature sig = Signature.getInstance("SHA256withRSA");
 		sig.initVerify(this.peerRsaPub);
 		byte[] payload = new byte[digest.length + this.peerDhPub.getEncoded().length];
-		System.out.println("payload size: " + payload.length);
 		System.arraycopy(digest, 0, payload, 0, digest.length);
 		System.arraycopy(this.peerDhPub.getEncoded(), 0, payload, 
 			digest.length, this.peerDhPub.getEncoded().length);

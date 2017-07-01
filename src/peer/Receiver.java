@@ -41,7 +41,7 @@ public class Receiver {
 			receiver.toSender = new ObjectOutputStream(receiver.skt.getOutputStream());
 			receiver.fromSender = new ObjectInputStream(receiver.skt.getInputStream());
 			receiver.md5 = MessageDigest.getInstance("SHA-256");
-		  	//receiver.handleDHKeyExchange();
+
 		  	receiver.start();
 		  	receiver.sendPub();
 		  	receiver.receiveDH();
@@ -84,19 +84,14 @@ public class Receiver {
 		Signature dsa = Signature.getInstance("SHA256withRSA");
 		dsa.initSign(this.rsaPri);
 		byte[] payload = new byte[digest.length + this.dhPub.getEncoded().length];
-		System.out.println("DH public key size: " + this.dhPub.getEncoded().length);
-		System.out.println("payload size: " + payload.length);
 		System.arraycopy(digest, 0, payload, 0, digest.length);
 		System.arraycopy(this.dhPub.getEncoded(), 0, payload, digest.length, this.dhPub.getEncoded().length);
 		dsa.update(payload);
 		byte[] signature = dsa.sign();
-		System.out.println("signature size: " + signature.length);
 
 		this.toSender.writeObject(this.dhPub);
 		this.toSender.flush();
 		this.toSender.write(digest); //16 bytes
-		this.toSender.flush();
-		this.toSender.writeInt(signature.length);
 		this.toSender.flush();
 		this.toSender.write(signature);
 		this.toSender.flush();
