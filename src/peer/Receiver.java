@@ -18,8 +18,8 @@ import javax.crypto.KeyAgreement;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 public class Receiver {
-	private ObjectOutputStream toSender;
-	private ObjectInputStream fromSender;
+	private OutputStream toSender;
+	private InputStream fromSender;
 	ServerSocket welcomeSkt;  // wait for sender to connect
 	Socket skt;
 	private PublicKey rsaPub;
@@ -38,8 +38,8 @@ public class Receiver {
 			receiver.welcomeSkt = new ServerSocket(portNum);
 			System.out.println("Receiver listens at port " + portNum);
 			receiver.skt = receiver.welcomeSkt.accept();
-			receiver.toSender = new ObjectOutputStream(receiver.skt.getOutputStream());
-			receiver.fromSender = new ObjectInputStream(receiver.skt.getInputStream());
+			receiver.toSender = receiver.skt.getOutputStream();
+			receiver.fromSender = receiver.skt.getInputStream();
 			receiver.md5 = MessageDigest.getInstance("SHA-256");
 
 		  	receiver.start();
@@ -54,20 +54,24 @@ public class Receiver {
 	}
 
 	private void start() throws Exception {
-		int start = this.fromSender.readInt();
-		System.out.println("Start value: " + start);
+		this.fromSender.read(new byte[4]);
+		//System.out.println("Start value: " + start);
 
 	}
 
 	private void sendPub() throws Exception {
 		this.generateRSAKeyPair();
 		this.generateDHKeyPair();
-		this.toSender.writeObject(this.rsaPub);
+		this.toSender.write(this.rsaPub.getEncoded());
 		this.toSender.flush();
 	}
 
 	private void receiveDH() throws Exception {
-		this.peerDhPub = (PublicKey)this.fromSender.readObject();
+		byte[] peerDhPubBytes = new byte[813];
+		this.fromSender.read(peerDhPubBytes, 0, 813);
+		this.peerDhPub = KeyFactory.getInstance("DiffieHellman").generatePublic(
+			new X509EncodedKeySpec(peerDhPubBytes));
+		//this.peerDhPub = (PublicKey)this.fromSender.readObject();
 		this.sessionKey = this.generateCommonSecretKey(this.peerDhPub);
 	}
 
@@ -89,7 +93,7 @@ public class Receiver {
 		dsa.update(payload);
 		byte[] signature = dsa.sign();
 
-		this.toSender.writeObject(this.dhPub);
+		this.toSender.write(this.dhPub.getEncoded());
 		this.toSender.flush();
 		this.toSender.write(digest); //16 bytes
 		this.toSender.flush();
@@ -111,6 +115,7 @@ public class Receiver {
 		KeyPair keyPair = keyPairGenerator.generateKeyPair();
 		this.rsaPri = keyPair.getPrivate();
 		this.rsaPub = keyPair.getPublic();
+		System.out.println("receiver rsa key size: " + this.rsaPub.getEncoded().length);
 	}
 
 	private SecretKeySpec generateCommonSecretKey(PublicKey peerDhPub) throws Exception {

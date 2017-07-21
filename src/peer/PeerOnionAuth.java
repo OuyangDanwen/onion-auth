@@ -1,10 +1,8 @@
 import java.io.File;
 import java.io.*;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
-import javax.crypto.SealedObject;
 import java.security.spec.*;
 import javax.crypto.spec.*;
 import javax.crypto.*;
@@ -20,8 +18,8 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 
 public class PeerOnionAuth {
-	private ObjectOutputStream toOnion;
-	private ObjectInputStream fromOnion;
+	private OutputStream toOnion;
+	private InputStream fromOnion;
 	private ServerSocket welcomeSkt;  // wait for sender to connect
 	private Socket skt;
 	private PrivateKey dhPri;
@@ -56,8 +54,8 @@ public class PeerOnionAuth {
 		System.out.println("Onion Authentication listens at port " + portNum);
 		this.skt = this.welcomeSkt.accept();
 		System.out.println("Incoming connection from Onion accepted");
-		this.toOnion = new ObjectOutputStream(this.skt.getOutputStream());
-		this.fromOnion = new ObjectInputStream(this.skt.getInputStream());
+		this.toOnion = this.skt.getOutputStream();
+		this.fromOnion = this.skt.getInputStream();
 		do {
 			receiveMessage();
 		} while (true);
@@ -112,16 +110,22 @@ public class PeerOnionAuth {
 
 	public void handleAuthStart(int size) throws Exception {
 		//read 32-bit reserved field
-		int reserved = this.fromOnion.readInt();
+		byte[] reservedBytes = new byte[4];
+		this.fromOnion.read(reservedBytes, 0, 4);
+		int reserved = new BigInteger(reservedBytes).intValue();
 
 		//read 32-bit request ID
-		int requestID = fromOnion.readInt();
+		byte[] requestIDBytes = new byte[4];
+		this.fromOnion.read(requestIDBytes, 0, 4);
+		int requestID = new BigInteger(requestIDBytes).intValue();
 
 		//read the hostkey(public key) as an object and save it for future use
-		this.peerHostkey = (PublicKey)this.fromOnion.readObject();
+		int peerHostkeySize = size - 12;
+		byte[] peerHostkeyBytes = new byte[peerHostkeySize];
+		this.peerHostkey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(peerHostkeyBytes));
 
 		//verify the size of the peer hostkey
-		if (this.peerHostkey.getEncoded().length != size) {
+		if (this.peerHostkey.getEncoded().length != size - 12) {
 			System.out.println("Hostkey size size does not match!");
 		} else {
 			System.out.println("Hostkey size check passed, okay to proceed!");
@@ -134,7 +138,8 @@ public class PeerOnionAuth {
 	private void sendHS1() throws Exception {
 		//16-bit size, in this case the size of the handshake payload
 		this.generateDHKeyPair();
-		int size = this.dhPub.getEncoded().length;
+		byte[] dhPubBytes = this.dhPub.getEncoded();
+		int size = 12 + dhPubBytes.length;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
 		this.toOnion.flush();
@@ -157,11 +162,12 @@ public class PeerOnionAuth {
 		this.sessionTypeMap.put(sessionID, MessageType.AUTH_SESSION_HS1);
 
 		//32-bit request ID
-		this.toOnion.writeInt(requestID);
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(0).array();//change later
+		this.toOnion.write(requestIDBytes);
 		this.toOnion.flush();
 
 		//handshake payload
-		this.toOnion.writeObject(this.dhPub);
+		this.toOnion.write(dhPubBytes);
 		this.toOnion.flush();
 
 	}
@@ -170,16 +176,26 @@ public class PeerOnionAuth {
 
 	public void handleIncomingHS1(int size) throws Exception {
 		//read 32-bit reserved field
-		int reserved = this.fromOnion.readInt();
+		byte[] reservedBytes = new byte[4];
+		this.fromOnion.read(reservedBytes, 0, 4);
+		int reserved = new BigInteger(reservedBytes).intValue();
 
 		//read 32-bit request ID
-		int requestID = fromOnion.readInt();
+		byte[] requestIDBytes = new byte[4];
+		this.fromOnion.read(requestIDBytes, 0, 4);
+		int requestID = new BigInteger(requestIDBytes).intValue();
+		
 
 		//read HS1 handshake payload
-		PublicKey peerDhPub = (PublicKey)this.fromOnion.readObject();
+		int peerDhPubSize = size - 12;
+		byte[] peerDhPubBytes = new byte[peerDhPubSize];
+		this.fromOnion.read(peerDhPubBytes, 0, size - 12);
+		PublicKey peerDhPub = KeyFactory.getInstance("DiffieHellman").generatePublic(
+			new X509EncodedKeySpec(peerDhPubBytes));
+
 
 		//verify the size of the payload
-		if (peerDhPub.getEncoded().length != size) {
+		if (peerDhPub.getEncoded().length != size - 12) {
 			System.out.println("Peer DH public key size does not match!");
 		} else {
 			System.out.println("Peer DH public key size check passed, okay to proceed!");
@@ -215,8 +231,8 @@ public class PeerOnionAuth {
 		dsa.update(payload);
 		byte[] signature = dsa.sign();
 
-		//16-bit size, in this case the size of the handshake payload
-		int size = signature.length + this.dhPub.getEncoded().length + digest.length;
+		//16-bit size
+		int size = signature.length + this.dhPub.getEncoded().length + digest.length + 12;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
 		this.toOnion.flush();
@@ -238,11 +254,12 @@ public class PeerOnionAuth {
 
 
 		//32-request ID
-		this.toOnion.writeInt(requestID);
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(0).array();
+		this.toOnion.write(requestIDBytes);
 		this.toOnion.flush();
 
 		//write the payload and signature
-		this.toOnion.writeObject(this.dhPub);
+		this.toOnion.write(this.dhPub.getEncoded());
 		this.toOnion.flush();
 		this.toOnion.write(digest);
 		this.toOnion.flush();
@@ -263,17 +280,22 @@ public class PeerOnionAuth {
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
 		//read 32-request ID
-		int requestID = this.fromOnion.readInt();
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
 
 		//read HS2 payload (session key hash + peer DH public key)
-		PublicKey peerDhPub = (PublicKey)this.fromOnion.readObject();
+		int peerDhPubSize = size - 12 - 32 - 512;
+		byte[] peerDhPubBytes = new byte[peerDhPubSize];
+		this.fromOnion.read(peerDhPubBytes, 0, peerDhPubSize);
+		PublicKey peerDhPub = KeyFactory.getInstance("DiffieHellman").generatePublic(
+			new X509EncodedKeySpec(peerDhPubBytes));
 		byte[] digest = new byte[32];
 		this.fromOnion.read(digest, 0, 32);
 		byte[] signature = new byte[512];
 		this.fromOnion.read(signature, 0, 512);
 
 		//verify payload size
-		if (!(peerDhPub.getEncoded().length + signature.length + digest.length == size)) {
+		if (!(peerDhPub.getEncoded().length + signature.length + digest.length + 12 == size)) {
 			System.out.println("Handshake payload does not match!");
 		} else {
 			System.out.println("Handshake payload size matches, okay to proceed!");

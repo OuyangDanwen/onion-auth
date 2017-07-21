@@ -20,8 +20,8 @@ import java.security.KeyPairGenerator;
 
 
 public class Sender {
-	private ObjectOutputStream toReceiver;
-	private ObjectInputStream fromReceiver;
+	private OutputStream toReceiver;
+	private InputStream fromReceiver;
 	private PublicKey dhPub;
 	private PrivateKey dhPri;
 	private PublicKey peerRsaPub;
@@ -34,8 +34,8 @@ public class Sender {
 			int receiverPortNum = 9191;
 			String receiverIPAddress = "127.0.0.1";
 			Socket skt = new Socket(receiverIPAddress, receiverPortNum);
-			sender.toReceiver = new ObjectOutputStream(skt.getOutputStream());
-			sender.fromReceiver = new ObjectInputStream(skt.getInputStream());
+			sender.toReceiver = skt.getOutputStream();
+			sender.fromReceiver = skt.getInputStream();
 
 			sender.start();
 			sender.receivePub();
@@ -50,12 +50,17 @@ public class Sender {
 	}
 
 	private void start() throws Exception {
-		this.toReceiver.writeInt(100);//just write 100 to start a conversation
+		this.toReceiver.write(new byte[4]);//just write 100 to start a conversation
 		this.toReceiver.flush();
 	}
 
 	private void receivePub() throws Exception {
-		this.peerRsaPub = (PublicKey)this.fromReceiver.readObject();
+		byte[] peerRsaPubBytes = new byte[550];
+		this.fromReceiver.read(peerRsaPubBytes, 0, 550);
+		this.peerRsaPub = KeyFactory.getInstance("RSA").generatePublic(
+			new X509EncodedKeySpec(peerRsaPubBytes));
+		//this.peerRsaPub = (PublicKey)this.fromReceiver.readObject();
+		System.out.println("rsa key size: " + this.peerRsaPub.getEncoded().length);
 
 	}
 
@@ -66,13 +71,17 @@ public class Sender {
 
 
 		//send HS2 payload (session key hash + peer DH public key)
-		this.toReceiver.writeObject(this.dhPub);
+		this.toReceiver.write(this.dhPub.getEncoded());
 		this.toReceiver.flush();
 
 	}
 
 	private void receiveDHPayload() throws Exception {
-		this.peerDhPub = (PublicKey)this.fromReceiver.readObject();
+		byte[] peerDhPubBytes = new byte[813];
+		this.fromReceiver.read(peerDhPubBytes, 0, 813);
+		this.peerDhPub = KeyFactory.getInstance("DiffieHellman").generatePublic(new X509EncodedKeySpec(peerDhPubBytes));
+		//this.peerDhPub = (PublicKey)this.fromReceiver.readObject();
+		System.out.println("dh key size: " + this.peerDhPub.getEncoded().length);
 		byte[] digest = new byte[32];
 		this.fromReceiver.read(digest, 0, 32);
 		byte[] signature = new byte[512];
