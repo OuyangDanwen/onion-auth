@@ -18,8 +18,8 @@ import javax.crypto.KeyAgreement;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 public class Receiver {
-	private OutputStream toSender;
-	private InputStream fromSender;
+	private DataOutputStream toSender;
+	private DataInputStream fromSender;
 	ServerSocket welcomeSkt;  // wait for sender to connect
 	Socket skt;
 	private PublicKey rsaPub;
@@ -38,8 +38,8 @@ public class Receiver {
 			receiver.welcomeSkt = new ServerSocket(portNum);
 			System.out.println("Receiver listens at port " + portNum);
 			receiver.skt = receiver.welcomeSkt.accept();
-			receiver.toSender = receiver.skt.getOutputStream();
-			receiver.fromSender = receiver.skt.getInputStream();
+			receiver.toSender = new DataOutputStream(receiver.skt.getOutputStream());
+			receiver.fromSender = new DataInputStream(receiver.skt.getInputStream());
 			receiver.md5 = MessageDigest.getInstance("SHA-256");
 
 		  	receiver.start();

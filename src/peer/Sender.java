@@ -20,8 +20,8 @@ import java.security.KeyPairGenerator;
 
 
 public class Sender {
-	private OutputStream toReceiver;
-	private InputStream fromReceiver;
+	private DataOutputStream toReceiver;
+	private DataInputStream fromReceiver;
 	private PublicKey dhPub;
 	private PrivateKey dhPri;
 	private PublicKey peerRsaPub;
@@ -34,8 +34,8 @@ public class Sender {
 			int receiverPortNum = 9191;
 			String receiverIPAddress = "127.0.0.1";
 			Socket skt = new Socket(receiverIPAddress, receiverPortNum);
-			sender.toReceiver = skt.getOutputStream();
-			sender.fromReceiver = skt.getInputStream();
+			sender.toReceiver = new DataOutputStream(skt.getOutputStream());
+			sender.fromReceiver = new DataInputStream(skt.getInputStream());
 
 			sender.start();
 			sender.receivePub();

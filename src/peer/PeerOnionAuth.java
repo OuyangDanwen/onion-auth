@@ -18,8 +18,8 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 
 public class PeerOnionAuth {
-	private OutputStream toOnion;
-	private InputStream fromOnion;
+	private DataOutputStream toOnion;
+	private DataInputStream fromOnion;
 	private ServerSocket welcomeSkt;  // wait for sender to connect
 	private Socket skt;
 	private PrivateKey dhPri;
@@ -54,8 +54,8 @@ public class PeerOnionAuth {
 		System.out.println("Onion Authentication listens at port " + portNum);
 		this.skt = this.welcomeSkt.accept();
 		System.out.println("Incoming connection from Onion accepted");
-		this.toOnion = this.skt.getOutputStream();
-		this.fromOnion = this.skt.getInputStream();
+		this.toOnion = new DataOutputStream(this.skt.getOutputStream());
+		this.fromOnion = new DataInputStream(this.skt.getInputStream());
 		do {
 			receiveMessage();
 		} while (true);
