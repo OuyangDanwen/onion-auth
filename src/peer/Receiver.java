@@ -99,7 +99,7 @@ public class Receiver {
 
 	private void generateDHKeyPair() throws Exception {
 		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
-		keyPairGenerator.initialize(1024);
+		keyPairGenerator.initialize(2048);
 		KeyPair keyPair = keyPairGenerator.generateKeyPair();
 		this.dhPri = keyPair.getPrivate();
 		this.dhPub = keyPair.getPublic();
@@ -107,7 +107,7 @@ public class Receiver {
 
 	private void generateRSAKeyPair() throws Exception {
 		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-		keyPairGenerator.initialize(2048);
+		keyPairGenerator.initialize(4096);
 		KeyPair keyPair = keyPairGenerator.generateKeyPair();
 		this.rsaPri = keyPair.getPrivate();
 		this.rsaPub = keyPair.getPublic();

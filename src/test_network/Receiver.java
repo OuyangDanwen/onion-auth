@@ -134,8 +134,10 @@ public class Receiver {
 		this.fromSender.read(reservedBytes, 0, 2);
 
 		//read 16-bit session ID
-		byte[] sessionIDBytes = new byte[2];
-		this.fromSender.read(sessionIDBytes, 0, 2);
+		byte[] bytes = new byte[2];
+		byte[] sessionIDBytes = new byte[3];
+		this.fromSender.read(bytes, 0, 2);
+		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 		System.out.println("Random session ID: " + sessionID);
 

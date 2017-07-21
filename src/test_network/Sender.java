@@ -173,11 +173,13 @@ public class Sender {
 
 		//16-bit session ID
 		SecureRandom prng = SecureRandom.getInstance("SHA1PRNG");
-		int randomNum = prng.nextInt((1 << 16) - 1);
+		int randomNum = (1 << 16) - 1;
+		//int randomNum = prng.nextInt((1 << 16) - 1);
 		byte[] sessionIDBytes = ByteBuffer.allocate(4).putInt(randomNum).array();
 		this.toReceiver.write(Arrays.copyOfRange(sessionIDBytes, 2, 4));
+		System.out.println("Random session ID: " + randomNum);
 		System.out.println("Random session ID generated: " + 
-			new BigInteger(Arrays.copyOfRange(sessionIDBytes, 2, 4)).intValue());	
+			new BigInteger(Arrays.copyOfRange(sessionIDBytes, 1, 4)).intValue());	
 
 		//32-bit request ID
 		this.toReceiver.writeInt(requestID);

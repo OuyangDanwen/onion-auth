@@ -75,8 +75,8 @@ public class Sender {
 		this.peerDhPub = (PublicKey)this.fromReceiver.readObject();
 		byte[] digest = new byte[32];
 		this.fromReceiver.read(digest, 0, 32);
-		byte[] signature = new byte[256];
-		this.fromReceiver.read(signature, 0, 256);
+		byte[] signature = new byte[512];
+		this.fromReceiver.read(signature, 0, 512);
 
 		SecretKeySpec sessionKey = this.generateCommonSecretKey(this.peerDhPub);
 
@@ -111,7 +111,7 @@ public class Sender {
 
 	private void generateDHKeyPair() throws Exception {
 		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
-		keyPairGenerator.initialize(1024);
+		keyPairGenerator.initialize(2048);
 		KeyPair keyPair = keyPairGenerator.generateKeyPair();
 		this.dhPri = keyPair.getPrivate();
 		this.dhPub = keyPair.getPublic();

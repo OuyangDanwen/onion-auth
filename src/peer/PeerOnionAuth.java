@@ -265,8 +265,8 @@ public class PeerOnionAuth {
 		PublicKey peerDhPub = (PublicKey)this.fromOnion.readObject();
 		byte[] digest = new byte[32];
 		this.fromOnion.read(digest, 0, 32);
-		byte[] signature = new byte[256];
-		this.fromOnion.read(signature, 0, 256);
+		byte[] signature = new byte[512];
+		this.fromOnion.read(signature, 0, 512);
 
 		//verify payload size
 		if (!(peerDhPub.getEncoded().length + signature.length + digest.length == size)) {
@@ -337,7 +337,7 @@ public class PeerOnionAuth {
 
 	private void generateDHKeyPair() throws Exception {
 		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
-		keyPairGenerator.initialize(1024);
+		keyPairGenerator.initialize(2048);
 		KeyPair keyPair = keyPairGenerator.generateKeyPair();
 		this.dhPri = keyPair.getPrivate();
 		this.dhPub = keyPair.getPublic();
@@ -345,7 +345,7 @@ public class PeerOnionAuth {
 
 	private void generateRSAKeyPair() throws Exception {
 		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-		keyPairGenerator.initialize(2048);
+		keyPairGenerator.initialize(4096);
 		KeyPair keyPair = keyPairGenerator.generateKeyPair();
 		this.rsaPri = keyPair.getPrivate();
 		this.rsaPub = keyPair.getPublic();
