@@ -100,8 +100,12 @@ public class PeerOnionAuth {
 			case AUTH_LAYER_ENCRYPT_RESP: break;
 			case AUTH_LAYER_DECRYPT: break;
 			case AUTH_LAYER_DECRYPT_RESP: break;
+			case AUTH_CIPHER_ENCRYPT: break;
+			case AUTH_CIPHER_ENCRYPT_RESP: break;
+			case AUTH_CIPHER_DECRYPT: break;
+			case AUTH_CIPHER_DECRYPT_RESP: break;
 			case AUTH_SESSION_CLOSE: break;
-			case AUTH_SESSION_ERROR: break;
+			case AUTH_ERROR: break;
 		}
 
 	}
