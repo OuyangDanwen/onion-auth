@@ -1,6 +1,5 @@
 import java.io.File;
 import java.io.*;
-import java.io.ObjectInputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.security.spec.*;
@@ -25,8 +24,6 @@ public class PeerOnionAuth {
 	private PrivateKey dhPri;
 	private PublicKey dhPub;
 	final private KeyFactory rsaKeyFactory;
-	final private KeyFactory aesKeyFactory;
-	final private Cipher aesCipher;
 	private MessageDigest sha256;
 	private HashMap<Integer, MessageType> sessionTypeMap; // map session ID to message type
 	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
@@ -40,8 +37,6 @@ public class PeerOnionAuth {
 	public PeerOnionAuth() throws Exception {
 		//crypto set up
 	    this.rsaKeyFactory = KeyFactory.getInstance("RSA");
-		this.aesKeyFactory = KeyFactory.getInstance("AES");
-		this.aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
 		this.sessionTypeMap = new HashMap<Integer, MessageType>();
 		this.sessionKeyMap = new HashMap<Integer, SecretKeySpec>();
 		this.prng = SecureRandom.getInstance("SHA1PRNG");
@@ -56,6 +51,7 @@ public class PeerOnionAuth {
 		System.out.println("Incoming connection from Onion accepted");
 		this.toOnion = new DataOutputStream(this.skt.getOutputStream());
 		this.fromOnion = new DataInputStream(this.skt.getInputStream());
+		
 		do {
 			receiveMessage();
 		} while (true);
@@ -83,6 +79,7 @@ public class PeerOnionAuth {
 		this.fromOnion.read(typeBytes, 0, 2);
 		int typeVal = new BigInteger(typeBytes).intValue();
 		MessageType type = MessageType.values()[typeVal];
+		System.out.println("message type: " + type);
 
 		switch(type) {
 			case AUTH_SESSION_START: 
@@ -113,15 +110,19 @@ public class PeerOnionAuth {
 		byte[] reservedBytes = new byte[4];
 		this.fromOnion.read(reservedBytes, 0, 4);
 		int reserved = new BigInteger(reservedBytes).intValue();
+		System.out.println("reserved: " + reserved);
 
 		//read 32-bit request ID
 		byte[] requestIDBytes = new byte[4];
 		this.fromOnion.read(requestIDBytes, 0, 4);
 		int requestID = new BigInteger(requestIDBytes).intValue();
+		System.out.println("request ID: " + requestID);
 
 		//read the hostkey(public key) as an object and save it for future use
 		int peerHostkeySize = size - 12;
+		System.out.println("peer hostkey size: " + peerHostkeySize);
 		byte[] peerHostkeyBytes = new byte[peerHostkeySize];
+		this.fromOnion.read(peerHostkeyBytes, 0, peerHostkeySize);
 		this.peerHostkey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(peerHostkeyBytes));
 
 		//verify the size of the peer hostkey
