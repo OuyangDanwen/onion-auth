@@ -391,4 +391,18 @@ public class PeerOnionAuth {
 		return new SecretKeySpec(rawAESKey, 0, rawAESKey.length, "AES");
 	}
 
+	//encrypt with a random IV in GCM mode
+	public byte[] encrypt(SecretKeySpec aesKey, byte[] payload, byte[] iv) throws Exception {
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+		cipher.init(Cipher.ENCRYPT_MODE, aesKey, new GCMParameterSpec(128, iv));
+		return cipher.doFinal(payload);
+	}
+
+	//decrypt with a given IV in GCM mode
+	public byte[] decrypt(SecretKeySpec aesKey, byte[] payload, byte[] iv) throws Exception {
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+		cipher.init(Cipher.DECRYPT_MODE, aesKey, new GCMParameterSpec(128, iv));
+		return cipher.doFinal(payload);	
+	}
+
 }

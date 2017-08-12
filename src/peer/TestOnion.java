@@ -58,5 +58,18 @@ class TestOnion {
 		//this.to.flush();
 		//this.to.write(Arrays.copyOfRange(ByteBuffer.allocate(4).putInt(10000).array(), 2, 4));
 	}
+
+	//encrypt with a random IV in GCM mode
+	public byte[] encrypt(SecretKey aesKey, byte[] payload, byte[] iv) throws Exception {
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+		cipher.init(Cipher.ENCRYPT_MODE, aesKey, new IvParameterSpec(iv));
+		return cipher.doFinal(payload);
+	}
+
+	public byte[] decrypt(SecretKey aesKey, byte[] payload, byte[] iv) throws Exception {
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+		cipher.init(Cipher.DECRYPT_MODE, aesKey, new IvParameterSpec(iv));
+		return cipher.doFinal(payload);	
+	}
 	
 }
