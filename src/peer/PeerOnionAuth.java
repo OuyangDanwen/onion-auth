@@ -23,7 +23,7 @@ public class PeerOnionAuth {
 	private Socket skt;
 	private PrivateKey dhPri;
 	private PublicKey dhPub;
-	final private KeyFactory rsaKeyFactory;
+	private KeyFactory rsaKeyFactory;
 	private MessageDigest sha256;
 	private HashMap<Integer, MessageType> sessionTypeMap; // map session ID to message type
 	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
@@ -32,7 +32,7 @@ public class PeerOnionAuth {
 	private PrivateKey rsaPri;
 	private PublicKey rsaPub;
 
-	private int requestID = 12;
+	private int requestID = 0;
 
 	public PeerOnionAuth() throws Exception {
 		//crypto set up
@@ -91,15 +91,22 @@ public class PeerOnionAuth {
 			case AUTH_SESSION_INCOMING_HS2: 
 				handleIncomingHS2(size);
 				break;
-			case AUTH_LAYER_ENCRYPT: break;
-			case AUTH_LAYER_ENCRYPT_RESP: break;
-			case AUTH_LAYER_DECRYPT: break;
-			case AUTH_LAYER_DECRYPT_RESP: break;
-			case AUTH_CIPHER_ENCRYPT: break;
-			case AUTH_CIPHER_ENCRYPT_RESP: break;
-			case AUTH_CIPHER_DECRYPT: break;
-			case AUTH_CIPHER_DECRYPT_RESP: break;
-			case AUTH_SESSION_CLOSE: break;
+			case AUTH_LAYER_ENCRYPT: 
+				handleLayerEncrypt(size);
+				break;
+			case AUTH_LAYER_DECRYPT: 
+				handleLayerDecrypt(size);
+				break;
+			case AUTH_CIPHER_ENCRYPT: 
+				byte[] reservedBytes = new byte[4];
+				this.fromOnion.read(reservedBytes);
+				handleCipherEncrypt(size, reservedBytes[3] & 1);
+				break;
+			case AUTH_CIPHER_DECRYPT: 
+				handleCipherDecrypt(size);
+				break;
+			case AUTH_SESSION_CLOSE: 
+				break;
 			case AUTH_ERROR: break;
 		}
 
@@ -280,7 +287,7 @@ public class PeerOnionAuth {
 		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
-		//read 32-request ID
+		//read 32-bit request ID
 		byte[] requestIDBytes = new byte[4];
 		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
 
@@ -338,26 +345,166 @@ public class PeerOnionAuth {
 
 	}
 
-	public void handlelayerEncrypt() throws Exception {
+	public void handleCipherEncrypt(int size, int flag) throws Exception {
+		if (flag == 1) {
+			//read 32-bit request ID
+			byte[] requestIDBytes = new byte[4];
+			int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+
+			//read 16-bit session ID
+			byte[] sessionIDBytes = new byte[3];
+			byte[] bytes = new byte[2];
+			this.fromOnion.read(bytes, 0, 2);
+			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+			int sessionID = new BigInteger(sessionIDBytes).intValue();
+
+			//get session key
+			SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
+			byte[] encPayload = null;
+			byte[] payload = new byte[size - 14];
+			this.fromOnion.read(payload, 0, payload.length);
+			if (sessionKey == null) {
+				this.sendAuthError();
+			}
+			encPayload = this.encrypt(sessionKey, payload);
+
+			//TODO
+			this.sendCipherEncryptRESP();
+		}
 
 	}
 
+	//TODO
+	private void sendCipherEncryptRESP() throws Exception {
+
+	}
+
+	public void handleCipherDecrypt(int size) throws Exception {
+		//read 16-bit reserved field
+		byte[] reservedBytes = new byte[4];
+		this.fromOnion.read(reservedBytes);
+
+		//read 32-bit request ID
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+
+		//read 16-bit session ID
+		byte[] sessionIDBytes = new byte[3];
+		byte[] bytes = new byte[2];
+		this.fromOnion.read(bytes, 0, 2);
+		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		int sessionID = new BigInteger(sessionIDBytes).intValue();
+
+		//get session key
+		SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
+		byte[] decPayload = null;
+		byte[] payload = new byte[size - 14];
+		this.fromOnion.read(payload, 0, payload.length);
+		if (sessionKey == null) {
+			this.sendAuthError();
+		}
+		decPayload = this.decrypt(sessionKey, payload);
+
+		//TODO
+		this.sendCipherDecryptRESP();
+
+	}
+
+	//TODO
+	private void sendCipherDecryptRESP() throws Exception {
+
+	}
+
+	public void handleLayerEncrypt(int size) throws Exception {
+		//read 16-bit reserved field
+		byte[] reservedBytes = new byte[4];
+		this.fromOnion.read(reservedBytes);
+
+		//read number of layers
+		byte[] numLayersBytes = new byte[2];
+		numLayersBytes[1] = reservedBytes[2];
+		int numLayers = new BigInteger(numLayersBytes).intValue();
+
+		//read 32-bit request ID
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+
+		//read all session IDs and get corresponding keys
+		ArrayList<SecretKeySpec> sessionKeys = new ArrayList<SecretKeySpec>();
+		for (int i = 0; i < numLayers; i++) {
+			byte[] sessionIDBytes = new byte[3];
+			byte[] bytes = new byte[2];
+			this.fromOnion.read(bytes, 0, 2);
+			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+			int sessionID = new BigInteger(sessionIDBytes).intValue();
+			sessionKeys.add(this.sessionKeyMap.get(sessionID));
+		}
+
+		//read payload
+		byte[] payload = new byte[size - 12 - numLayers * 2];
+		this.fromOnion.read(payload, 0, payload.length);
+
+		//layer encrypt payload
+		byte[] encPayload = this.layerEncrypt(sessionKeys, payload);
+
+		//TODO
+		this.sendLayerEncryptRESP();
+
+	}
+
+	//TODO
 	private void sendLayerEncryptRESP() throws Exception {
 
 	}
 
-	public void handlelayerDecrypt() throws Exception {
+	public void handleLayerDecrypt(int size) throws Exception {
+		//read 16-bit reserved field
+		byte[] reservedBytes = new byte[4];
+		this.fromOnion.read(reservedBytes);
+
+		//read number of layers
+		byte[] numLayersBytes = new byte[2];
+		numLayersBytes[1] = reservedBytes[2];
+		int numLayers = new BigInteger(numLayersBytes).intValue();
+
+		//read 32-bit request ID
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+
+		//read all session IDs and get corresponding keys
+		ArrayList<SecretKeySpec> sessionKeys = new ArrayList<SecretKeySpec>();
+		for (int i = 0; i < numLayers; i++) {
+			byte[] sessionIDBytes = new byte[3];
+			byte[] bytes = new byte[2];
+			this.fromOnion.read(bytes, 0, 2);
+			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+			int sessionID = new BigInteger(sessionIDBytes).intValue();
+			sessionKeys.add(this.sessionKeyMap.get(sessionID));
+		}
+
+		//read encrypted payload
+		byte[] encpayload = new byte[size - 12 - numLayers * 2];
+		this.fromOnion.read(encpayload, 0, encpayload.length);
+
+		//layer decrypt encrypted payload
+		byte[] payload = this.layerDecrypt(sessionKeys, encpayload);
+
+		//TODO
+		this.sendLayerDecryptRESP();
 
 	}
 
+	//TODO
 	private void sendLayerDecryptRESP() throws Exception {
 
 	}
 
+	//TODO
 	public void handleAuthClose() throws Exception {
 
 	}
 
+	//TODO
 	private void sendAuthError() throws Exception {
 
 	}
@@ -392,17 +539,44 @@ public class PeerOnionAuth {
 	}
 
 	//encrypt with a random IV in GCM mode
-	public byte[] encrypt(SecretKeySpec aesKey, byte[] payload, byte[] iv) throws Exception {
+	private byte[] encrypt(SecretKeySpec sessionKey, byte[] payload) throws Exception {
+		//generate a random IV
+		byte[] iv = new byte[12];
+		new Random().nextBytes(iv);
 		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-		cipher.init(Cipher.ENCRYPT_MODE, aesKey, new GCMParameterSpec(128, iv));
-		return cipher.doFinal(payload);
+		cipher.init(Cipher.ENCRYPT_MODE, sessionKey, new GCMParameterSpec(128, iv));
+		byte[] ctxt = cipher.doFinal(payload);
+		byte[] encPayload = new byte[iv.length + ctxt.length];
+		System.arraycopy(iv, 0, encPayload, 0, iv.length);
+		System.arraycopy(ctxt, 0, encPayload, iv.length, ctxt.length);
+		//IV + ciphertext
+		return encPayload;
 	}
 
 	//decrypt with a given IV in GCM mode
-	public byte[] decrypt(SecretKeySpec aesKey, byte[] payload, byte[] iv) throws Exception {
+	private byte[] decrypt(SecretKeySpec sessionKey, byte[] payload) throws Exception {
+		//read IV from payload
+		byte[] iv = new byte[12];
+		System.arraycopy(payload, 0, iv, 0, 12);
 		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-		cipher.init(Cipher.DECRYPT_MODE, aesKey, new GCMParameterSpec(128, iv));
+		cipher.init(Cipher.DECRYPT_MODE, sessionKey, new GCMParameterSpec(128, iv));
 		return cipher.doFinal(payload);	
+	}
+
+	//layer encrypt
+	private byte[] layerEncrypt(ArrayList<SecretKeySpec> sessionKeys, byte[] payload) throws Exception {
+		for (int i = 0; i < sessionKeys.size(); i++) {
+			payload = this.encrypt(sessionKeys.get(i), payload);
+		}
+		return payload;
+	}
+
+	//layer decrypt
+	private byte[] layerDecrypt(ArrayList<SecretKeySpec> sessionKeys, byte[] payload) throws Exception {
+		for (int i = sessionKeys.size() - 1; i >= 0; i--) {
+			payload = this.decrypt(sessionKeys.get(i), payload);
+		}
+		return payload;
 	}
 
 }
