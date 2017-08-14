@@ -323,6 +323,7 @@ public class PeerOnionAuth {
 			System.out.println("Payload signature matches, okay to proceed!");
 		}
 
+		//add the session key to the key map
 		this.sessionKeyMap.put(sessionID, aesKeySpec);
 	}
 
