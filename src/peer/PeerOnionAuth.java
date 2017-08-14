@@ -25,7 +25,6 @@ public class PeerOnionAuth {
 	private PublicKey dhPub;
 	private KeyFactory rsaKeyFactory;
 	private MessageDigest sha256;
-	private HashMap<Integer, MessageType> sessionTypeMap; // map session ID to message type
 	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
 	private SecureRandom prng;
 	private PublicKey peerHostkey;
@@ -37,7 +36,6 @@ public class PeerOnionAuth {
 	public PeerOnionAuth() throws Exception {
 		//crypto set up
 	    this.rsaKeyFactory = KeyFactory.getInstance("RSA");
-		this.sessionTypeMap = new HashMap<Integer, MessageType>();
 		this.sessionKeyMap = new HashMap<Integer, SecretKeySpec>();
 		this.prng = SecureRandom.getInstance("SHA1PRNG");
 		this.sha256 = MessageDigest.getInstance("SHA-256");
@@ -72,14 +70,12 @@ public class PeerOnionAuth {
 		this.fromOnion.read(bytes, 0, 2);
 		System.arraycopy(bytes, 0, sizeBytes, 1, bytes.length);
 		int size = new BigInteger(sizeBytes).intValue();
-		System.out.println("Payload size: " + size);
 
 		//read 16-bit message type
 		byte[] typeBytes = new byte[2];
 		this.fromOnion.read(typeBytes, 0, 2);
 		int typeVal = new BigInteger(typeBytes).intValue();
 		MessageType type = MessageType.values()[typeVal];
-		System.out.println("message type: " + type);
 
 		switch(type) {
 			case AUTH_SESSION_START: 
@@ -126,11 +122,9 @@ public class PeerOnionAuth {
 		byte[] requestIDBytes = new byte[4];
 		this.fromOnion.read(requestIDBytes, 0, 4);
 		int requestID = new BigInteger(requestIDBytes).intValue();
-		System.out.println("request ID: " + requestID);
 
 		//read the hostkey(public key) as an object and save it for future use
 		int peerHostkeySize = size - 12;
-		System.out.println("peer hostkey size: " + peerHostkeySize);
 		byte[] peerHostkeyBytes = new byte[peerHostkeySize];
 		this.fromOnion.read(peerHostkeyBytes, 0, peerHostkeySize);
 		this.peerHostkey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(peerHostkeyBytes));
@@ -170,7 +164,6 @@ public class PeerOnionAuth {
 		byte[] sessionIDBytes = ByteBuffer.allocate(4).putInt(sessionID).array();
 		this.toOnion.write(Arrays.copyOfRange(sessionIDBytes, 2, 4));
 		this.toOnion.flush();
-		this.sessionTypeMap.put(sessionID, MessageType.AUTH_SESSION_HS1);
 
 		//32-bit request ID
 		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
@@ -212,7 +205,6 @@ public class PeerOnionAuth {
 
 		//reply to INCOMING HS1
 		int sessionID = this.prng.nextInt((1 << 16) - 1);
-		this.sessionTypeMap.put(sessionID, MessageType.AUTH_SESSION_HS2);
 		this.sessionKeyMap.put(sessionID, aesKeySpec);
 		this.sendHS2(sessionID, requestID);
 	}
@@ -278,9 +270,7 @@ public class PeerOnionAuth {
 
 		//read 16-bit session ID
 		byte[] sessionIDBytes = new byte[3];
-		byte[] bytes = new byte[2];
-		this.fromOnion.read(bytes, 0, 2);
-		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		this.fromOnion.read(sessionIDBytes, 0, 2);
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
 		//read 32-bit request ID
@@ -333,12 +323,7 @@ public class PeerOnionAuth {
 			System.out.println("Payload signature matches, okay to proceed!");
 		}
 
-		//check if session ID exists, it should match one of the session IDs from HS1
-		MessageType type = this.sessionTypeMap.get(sessionID);
-		if (type == MessageType.AUTH_SESSION_HS1) {
-			this.sessionKeyMap.put(sessionID, aesKeySpec);
-		}
-
+		this.sessionKeyMap.put(sessionID, aesKeySpec);
 	}
 
 
@@ -362,9 +347,7 @@ public class PeerOnionAuth {
 		ArrayList<Integer> sessionIDs = new ArrayList<Integer>();
 		for (int i = 0; i < numLayers; i++) {
 			byte[] sessionIDBytes = new byte[3];
-			byte[] bytes = new byte[2];
-			this.fromOnion.read(bytes, 0, 2);
-			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+			this.fromOnion.read(sessionIDBytes, 0, 2);
 			int sessionID = new BigInteger(sessionIDBytes).intValue();
 			sessionIDs.add(sessionID);
 			sessionKeys.add(this.sessionKeyMap.get(sessionID));
@@ -435,9 +418,7 @@ public class PeerOnionAuth {
 		ArrayList<SecretKeySpec> sessionKeys = new ArrayList<SecretKeySpec>();
 		for (int i = 0; i < numLayers; i++) {
 			byte[] sessionIDBytes = new byte[3];
-			byte[] bytes = new byte[2];
-			this.fromOnion.read(bytes, 0, 2);
-			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+			this.fromOnion.read(sessionIDBytes, 0, 2);
 			int sessionID = new BigInteger(sessionIDBytes).intValue();
 			sessionKeys.add(this.sessionKeyMap.get(sessionID));
 		}
@@ -491,9 +472,7 @@ public class PeerOnionAuth {
 
 		//read 16-bit session ID
 		byte[] sessionIDBytes = new byte[3];
-		byte[] bytes = new byte[2];
-		this.fromOnion.read(bytes, 0, 2);
-		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		this.fromOnion.read(sessionIDBytes, 0, 2);
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
 		byte[] payload;
@@ -569,9 +548,7 @@ public class PeerOnionAuth {
 
 		//read 16-bit session ID
 		byte[] sessionIDBytes = new byte[3];
-		byte[] bytes = new byte[2];
-		this.fromOnion.read(bytes, 0, 2);
-		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		this.fromOnion.read(sessionIDBytes, 0, 2);
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
 		//get session key
@@ -585,7 +562,7 @@ public class PeerOnionAuth {
 
 		// read hash value of original cleartext payload
 		byte[] hashOrigPayload = new byte[32];
-		this.fromOnion.read(hashPayload, 0, hashPayload.length);
+		this.fromOnion.read(hashOrigPayload, 0, hashOrigPayload.length);
 
 		// if the decryption fails, send AUTH ERROR message instead
 		try {
@@ -602,7 +579,8 @@ public class PeerOnionAuth {
 		this.sendCipherDecryptRESP(requestID, decPayloadWithOrigHash);
 	}
 
-	private void sendCipherDecryptRESP(int requestID, byte[] decPayloadWithOrigHash) throws Exception {
+	private void sendCipherDecryptRESP(int requestID, 
+		byte[] decPayloadWithOrigHash) throws Exception {
 		// Check if the decrypted payload matches the hash of the original cleartext payload
 		byte[] decPayload = new byte[decPayloadWithOrigHash.length - 32];
 		byte[] hashOrigPayload = new byte[32];
@@ -625,10 +603,8 @@ public class PeerOnionAuth {
 
 		//31-bit reserved field and 1-bit flag
 		byte[] reserved = new byte[4];
-		if (isHashMatch) { // if hash matches, then the payload is plaintext so set flag to 0
-			reserved = reserved | (0 << 31);
-		} else {
-			reserved = reserved | (1 << 31);
+		if (!isHashMatch) { // if hash does not match, then the payload is encrypted so set flag to 1
+			reserved[3] = (byte)(reserved[3] | 1);
 		}
 		this.toOnion.write(reserved);
 		this.toOnion.flush();
@@ -652,14 +628,11 @@ public class PeerOnionAuth {
 
 		// read 16-bit session ID
 		byte[] sessionIDBytes = new byte[3];
-		byte[] bytes = new byte[2];
-		this.fromOnion.read(bytes, 0, 2);
-		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		this.fromOnion.read(sessionIDBytes, 0, 2);
 		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
 		// remove corresponding session key from the hashmap
 		this.sessionKeyMap.remove(sessionID);
-		this.sessionTypeMap.remove(sessionID);
 	}
 
 	//TODO
