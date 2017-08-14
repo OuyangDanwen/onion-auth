@@ -346,36 +346,59 @@ public class PeerOnionAuth {
 	}
 
 	public void handleCipherEncrypt(int size, int flag) throws Exception {
-		if (flag == 1) {
-			//read 32-bit request ID
-			byte[] requestIDBytes = new byte[4];
-			int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+		//read 32-bit request ID
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
 
-			//read 16-bit session ID
-			byte[] sessionIDBytes = new byte[3];
-			byte[] bytes = new byte[2];
-			this.fromOnion.read(bytes, 0, 2);
-			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
-			int sessionID = new BigInteger(sessionIDBytes).intValue();
+		//read 16-bit session ID
+		byte[] sessionIDBytes = new byte[3];
+		byte[] bytes = new byte[2];
+		this.fromOnion.read(bytes, 0, 2);
+		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		int sessionID = new BigInteger(sessionIDBytes).intValue();
 
+		//read payload
+		byte[] payload = new byte[size - 14];
+		this.fromOnion.read(payload, 0, payload.length);
+
+		if (flag == 1) {//encrypt
 			//get session key
 			SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
-			byte[] encPayload = null;
-			byte[] payload = new byte[size - 14];
-			this.fromOnion.read(payload, 0, payload.length);
 			if (sessionKey == null) {
 				this.sendAuthError();
 			}
-			encPayload = this.encrypt(sessionKey, payload);
-
-			//TODO
-			this.sendCipherEncryptRESP();
+			this.sendCipherEncryptRESP(requestID, this.encrypt(sessionKey, payload));
+		} else {//does not encrypt
+			this.sendLayerEncryptRESP(requestID, payload);
 		}
 
 	}
 
-	//TODO
-	private void sendCipherEncryptRESP() throws Exception {
+	private void sendCipherEncryptRESP(int requestID, byte[] encpayload) throws Exception {
+		//16-bit size
+		int size = encpayload.length + 12;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_CIPHER_ENCRYPT_RESP.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//32-bit reserved field
+		this.toOnion.write(new byte[4]);
+		this.toOnion.flush();
+
+		//32-bit request ID
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
+		this.toOnion.write(requestIDBytes);
+		this.toOnion.flush();
+
+		//write encrypted payload
+		this.toOnion.write(encpayload);
+		this.toOnion.flush();
 
 	}
 
@@ -405,13 +428,38 @@ public class PeerOnionAuth {
 		}
 		decPayload = this.decrypt(sessionKey, payload);
 
-		//TODO
-		this.sendCipherDecryptRESP();
+		//TODO: figure out how to determine the current level of decryption and thus set the E flag
+		this.sendCipherDecryptRESP(requestID, decPayload);
 
 	}
 
-	//TODO
-	private void sendCipherDecryptRESP() throws Exception {
+	private void sendCipherDecryptRESP(int requestID, byte[] payload) throws Exception {
+		//16-bit size
+		int size = payload.length + 12;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_CIPHER_DECRYPT_RESP.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//32-bit reserved field
+		//TODO: figure out how to determine the current level of decryption and thus set the E flag
+		//TODO: append the flag as the last bit
+		this.toOnion.write(new byte[4]);
+		this.toOnion.flush();
+
+		//32-bit request ID
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
+		this.toOnion.write(requestIDBytes);
+		this.toOnion.flush();
+
+		//write decrypted payload
+		this.toOnion.write(payload);
+		this.toOnion.flush();
 
 	}
 
@@ -431,12 +479,14 @@ public class PeerOnionAuth {
 
 		//read all session IDs and get corresponding keys
 		ArrayList<SecretKeySpec> sessionKeys = new ArrayList<SecretKeySpec>();
+		ArrayList<Integer> sessionIDs = new ArrayList<Integer>();
 		for (int i = 0; i < numLayers; i++) {
 			byte[] sessionIDBytes = new byte[3];
 			byte[] bytes = new byte[2];
 			this.fromOnion.read(bytes, 0, 2);
 			System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
 			int sessionID = new BigInteger(sessionIDBytes).intValue();
+			sessionIDs.add(sessionID);
 			sessionKeys.add(this.sessionKeyMap.get(sessionID));
 		}
 
@@ -447,13 +497,35 @@ public class PeerOnionAuth {
 		//layer encrypt payload
 		byte[] encPayload = this.layerEncrypt(sessionKeys, payload);
 
-		//TODO
-		this.sendLayerEncryptRESP();
+		this.sendLayerEncryptRESP(requestID, encPayload);
 
 	}
 
-	//TODO
-	private void sendLayerEncryptRESP() throws Exception {
+	private void sendLayerEncryptRESP(int requestID, byte[] encpayload) throws Exception {
+		//16-bit size
+		int size = encpayload.length + 12;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_LAYER_ENCRYPT_RESP.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//32-bit reserved field
+		this.toOnion.write(new byte[4]);
+		this.toOnion.flush();
+
+		//32-bit request ID
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
+		this.toOnion.write(requestIDBytes);
+		this.toOnion.flush();
+
+		//write encrypted payload
+		this.toOnion.write(encpayload);
+		this.toOnion.flush();
 
 	}
 
@@ -489,13 +561,34 @@ public class PeerOnionAuth {
 		//layer decrypt encrypted payload
 		byte[] payload = this.layerDecrypt(sessionKeys, encpayload);
 
-		//TODO
-		this.sendLayerDecryptRESP();
-
+		this.sendLayerDecryptRESP(requestID, payload);
 	}
 
-	//TODO
-	private void sendLayerDecryptRESP() throws Exception {
+	private void sendLayerDecryptRESP(int requestID, byte[] payload) throws Exception {
+		//16-bit size
+		int size = payload.length + 12;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_LAYER_DECRYPT_RESP.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//32-bit reserved field
+		this.toOnion.write(new byte[4]);
+		this.toOnion.flush();
+
+		//32-bit request ID
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
+		this.toOnion.write(requestIDBytes);
+		this.toOnion.flush();
+
+		//write decrypted payload
+		this.toOnion.write(payload);
+		this.toOnion.flush();
 
 	}
 
