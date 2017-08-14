@@ -350,127 +350,7 @@ public class PeerOnionAuth {
 
 	}
 
-	public void handleCipherEncrypt(int size, int flag) throws Exception {
-		//read 32-bit request ID
-		byte[] requestIDBytes = new byte[4];
-		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
 
-		//read 16-bit session ID
-		byte[] sessionIDBytes = new byte[3];
-		byte[] bytes = new byte[2];
-		this.fromOnion.read(bytes, 0, 2);
-		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
-		int sessionID = new BigInteger(sessionIDBytes).intValue();
-
-		//read payload
-		byte[] payload = new byte[size - 14];
-		this.fromOnion.read(payload, 0, payload.length);
-
-		if (flag == 1) { //already-encrypted payload
-			//get session key
-			SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
-			if (sessionKey == null) {
-				this.sendAuthError(requestID);
-			}
-			this.sendCipherEncryptRESP(requestID, this.encrypt(sessionKey, payload));
-		} else { //cleartext
-			this.sendLayerEncryptRESP(requestID, payload);
-		}
-
-	}
-
-	private void sendCipherEncryptRESP(int requestID, byte[] encPayload) throws Exception {
-		//16-bit size
-		int size = encPayload.length + 12;
-		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
-		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
-		this.toOnion.flush();
-
-		//16-bit message type
-		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
-			MessageType.AUTH_CIPHER_ENCRYPT_RESP.getVal()).array();
-		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
-		this.toOnion.flush();
-
-		//32-bit reserved field
-		this.toOnion.write(new byte[4]);
-		this.toOnion.flush();
-
-		//32-bit request ID
-		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
-		this.toOnion.write(requestIDBytes);
-		this.toOnion.flush();
-
-		//write encrypted payload
-		this.toOnion.write(encPayload);
-		this.toOnion.flush();
-
-	}
-
-	public void handleCipherDecrypt(int size) throws Exception {
-		//read 16-bit reserved field
-		byte[] reservedBytes = new byte[4];
-		this.fromOnion.read(reservedBytes);
-
-		//read 32-bit request ID
-		byte[] requestIDBytes = new byte[4];
-		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
-
-		//read 16-bit session ID
-		byte[] sessionIDBytes = new byte[3];
-		byte[] bytes = new byte[2];
-		this.fromOnion.read(bytes, 0, 2);
-		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
-		int sessionID = new BigInteger(sessionIDBytes).intValue();
-
-		//get session key
-		SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
-		byte[] decPayload = null;
-		byte[] payload = new byte[size - 14];
-		this.fromOnion.read(payload, 0, payload.length);
-		if (sessionKey == null) {
-			this.sendAuthError(requestID);
-		}
-
-		// if the decryption fails, send AUTH ERROR message instead
-		try {
-			decPayload = this.decrypt(sessionKey, payload);
-		} catch (Exception e) {
-			this.sendAuthError(requestID);
-		}
-		this.sendCipherDecryptRESP(requestID, decPayload);
-
-	}
-
-	private void sendCipherDecryptRESP(int requestID, byte[] decPayload) throws Exception {
-		//16-bit size
-		int size = decPayload.length + 12;
-		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
-		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
-		this.toOnion.flush();
-
-		//16-bit message type
-		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
-			MessageType.AUTH_CIPHER_DECRYPT_RESP.getVal()).array();
-		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
-		this.toOnion.flush();
-
-		//32-bit reserved field
-		//TODO: figure out how to determine the current level of decryption and thus set the E flag
-		//TODO: append the flag as the last bit
-		this.toOnion.write(new byte[4]);
-		this.toOnion.flush();
-
-		//32-bit request ID
-		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
-		this.toOnion.write(requestIDBytes);
-		this.toOnion.flush();
-
-		//write decrypted payload
-		this.toOnion.write(decPayload);
-		this.toOnion.flush();
-
-	}
 
 	public void handleLayerEncrypt(int size) throws Exception {
 		//read 16-bit reserved field
@@ -499,20 +379,28 @@ public class PeerOnionAuth {
 			sessionKeys.add(this.sessionKeyMap.get(sessionID));
 		}
 
-		//read payload
+		//read cleartext payload
 		byte[] payload = new byte[size - 12 - numLayers * 2];
 		this.fromOnion.read(payload, 0, payload.length);
+
+		//get hash of the cleartext payload
+		byte[] hashOrigPayload = this.hash(payload);
 
 		//layer encrypt payload
 		byte[] encPayload = this.layerEncrypt(sessionKeys, payload);
 
-		this.sendLayerEncryptRESP(requestID, encPayload);
+		// append the hash of the cleartext to the end of the encrypted payload
+		byte[] encPayloadWithOrigHash = new byte[encPayload.length + hashOrigPayload.length];
+		System.arraycopy(encPayload, 0, encPayloadWithOrigHash, 0, encPayload.length);
+		System.arraycopy(hashOrigPayload, 0, encPayloadWithOrigHash, encPayload.length, hashOrigPayload.length);
+
+		this.sendLayerEncryptRESP(requestID, encPayloadWithOrigHash);
 
 	}
 
-	private void sendLayerEncryptRESP(int requestID, byte[] encpayload) throws Exception {
+	private void sendLayerEncryptRESP(int requestID, byte[] encPayloadWithOrigHash) throws Exception {
 		//16-bit size
-		int size = encpayload.length + 12;
+		int size = encPayloadWithOrigHash.length + 12;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
 		this.toOnion.flush();
@@ -533,7 +421,7 @@ public class PeerOnionAuth {
 		this.toOnion.flush();
 
 		//write encrypted payload
-		this.toOnion.write(encpayload);
+		this.toOnion.write(encPayloadWithOrigHash);
 		this.toOnion.flush();
 
 	}
@@ -564,18 +452,22 @@ public class PeerOnionAuth {
 		}
 
 		//read encrypted payload
-		byte[] encpayload = new byte[size - 12 - numLayers * 2];
-		this.fromOnion.read(encpayload, 0, encpayload.length);
+		byte[] encPayload = new byte[size - 12 - (numLayers * 2) - 32];
+		this.fromOnion.read(encPayload, 0, encPayload.length);
+
+		// read hash value of original cleartext payload; not used here
+		byte[] hashOrigPayload = new byte[32];
+		this.fromOnion.read(hashOrigPayload, 0, hashOrigPayload.length);
 
 		//layer decrypt encrypted payload
-		byte[] payload = this.layerDecrypt(sessionKeys, encpayload);
+		byte[] decPayload = this.layerDecrypt(sessionKeys, encPayload);
 
-		this.sendLayerDecryptRESP(requestID, payload);
+		this.sendLayerDecryptRESP(requestID, decPayload);
 	}
 
-	private void sendLayerDecryptRESP(int requestID, byte[] payload) throws Exception {
+	private void sendLayerDecryptRESP(int requestID, byte[] decPayload) throws Exception {
 		//16-bit size
-		int size = payload.length + 12;
+		int size = decPayload.length + 12;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
 		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
 		this.toOnion.flush();
@@ -596,10 +488,169 @@ public class PeerOnionAuth {
 		this.toOnion.flush();
 
 		//write decrypted payload
-		this.toOnion.write(payload);
+		this.toOnion.write(decPayload);
 		this.toOnion.flush();
 
 	}
+
+	public void handleCipherEncrypt(int size, int flag) throws Exception {
+		//read 32-bit request ID
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+
+		//read 16-bit session ID
+		byte[] sessionIDBytes = new byte[3];
+		byte[] bytes = new byte[2];
+		this.fromOnion.read(bytes, 0, 2);
+		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		int sessionID = new BigInteger(sessionIDBytes).intValue();
+
+		//read payload
+		byte[] payload = new byte[size - 14 - 32];
+		this.fromOnion.read(payload, 0, payload.length);
+
+		// read hash value of original cleartext payload
+		byte[] hashOrigPayload = new byte[32];
+		this.fromOnion.read(hashOrigPayload, 0, hashOrigPayload.length);
+
+		if (flag == 1) { //already-encrypted payload
+			//get session key
+			SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
+			if (sessionKey == null) {
+				this.sendAuthError(requestID);
+			}
+			byte[] encPayload = this.encrypt(sessionKey, payload);
+
+			// append the hash of the cleartext to the end of the encrypted payload
+			byte[] encPayloadWithOrigHash = new byte[encPayload.length + hashOrigPayload.length];
+			System.arraycopy(encPayload, 0, encPayloadWithOrigHash, 0, encPayload.length);
+			System.arraycopy(hashOrigPayload, 0, encPayloadWithOrigHash, encPayload.length, hashOrigPayload.length);
+
+			this.sendCipherEncryptRESP(requestID, encPayloadWithOrigHash);
+		} else { //cleartext
+			byte[] payloadWithOrigHash = new byte[payload.length + hashOrigPayload.length];
+			System.arraycopy(payload, 0, payloadWithOrigHash, 0, payload.length);
+			System.arraycopy(hashOrigPayload, 0, payloadWithOrigHash, payload.length, hashOrigPayload.length);
+
+			this.sendLayerEncryptRESP(requestID, payloadWithOrigHash);
+		}
+
+	}
+
+	private void sendCipherEncryptRESP(int requestID, byte[] encPayloadWithOrigHash) throws Exception {
+		//16-bit size
+		int size = encPayloadWithOrigHash.length + 12;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_CIPHER_ENCRYPT_RESP.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//32-bit reserved field
+		this.toOnion.write(new byte[4]);
+		this.toOnion.flush();
+
+		//32-bit request ID
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
+		this.toOnion.write(requestIDBytes);
+		this.toOnion.flush();
+
+		//write encrypted payload
+		this.toOnion.write(encPayloadWithOrigHash);
+		this.toOnion.flush();
+
+	}
+
+	public void handleCipherDecrypt(int size) throws Exception {
+		//read 16-bit reserved field
+		byte[] reservedBytes = new byte[4];
+		this.fromOnion.read(reservedBytes);
+
+		//read 32-bit request ID
+		byte[] requestIDBytes = new byte[4];
+		int requestID = this.fromOnion.read(requestIDBytes, 0, 4);
+
+		//read 16-bit session ID
+		byte[] sessionIDBytes = new byte[3];
+		byte[] bytes = new byte[2];
+		this.fromOnion.read(bytes, 0, 2);
+		System.arraycopy(bytes, 0, sessionIDBytes, 1, bytes.length);
+		int sessionID = new BigInteger(sessionIDBytes).intValue();
+
+		//get session key
+		SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
+		byte[] decPayload = null;
+		byte[] payload = new byte[size - 14 - 32];
+		this.fromOnion.read(payload, 0, payload.length);
+		if (sessionKey == null) {
+			this.sendAuthError(requestID);
+		}
+
+		// read hash value of original cleartext payload
+		byte[] hashOrigPayload = new byte[32];
+		this.fromOnion.read(hashPayload, 0, hashPayload.length);
+
+		// if the decryption fails, send AUTH ERROR message instead
+		try {
+			decPayload = this.decrypt(sessionKey, payload);
+		} catch (Exception e) {
+			this.sendAuthError(requestID);
+		}
+
+		// append the hash of the cleartext to the end of the decrypted payload
+		byte[] decPayloadWithOrigHash = new byte[decPayload.length + hashOrigPayload.length];
+		System.arraycopy(decPayload, 0, decPayloadWithOrigHash, 0, decPayload.length);
+		System.arraycopy(hashOrigPayload, 0, decPayloadWithOrigHash, decPayload.length, hashOrigPayload.length);
+
+		this.sendCipherDecryptRESP(requestID, decPayloadWithOrigHash);
+	}
+
+	private void sendCipherDecryptRESP(int requestID, byte[] decPayloadWithOrigHash) throws Exception {
+		// Check if the decrypted payload matches the hash of the original cleartext payload
+		byte[] decPayload = new byte[decPayloadWithOrigHash.length - 32];
+		byte[] hashOrigPayload = new byte[32];
+		System.arraycopy(decPayloadWithOrigHash, 0, decPayload, 0, decPayload.length);
+		System.arraycopy(decPayloadWithOrigHash, decPayload.length, hashOrigPayload, 0, hashOrigPayload.length);
+		byte[] hashDecPayload = this.hash(decPayload);
+		boolean isHashMatch = Arrays.equals(hashDecPayload, hashOrigPayload);
+
+		//16-bit size
+		int size = decPayloadWithOrigHash.length + 12;
+		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+		this.toOnion.write(Arrays.copyOfRange(sizeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//16-bit message type
+		byte[] typeBytes = ByteBuffer.allocate(4).putInt(
+			MessageType.AUTH_CIPHER_DECRYPT_RESP.getVal()).array();
+		this.toOnion.write(Arrays.copyOfRange(typeBytes, 2, 4));
+		this.toOnion.flush();
+
+		//32-bit reserved field
+		byte[] reserved = new byte[4];
+		if (isHashMatch) { // if hash matches, then the payload is plaintext so set flag to 0
+			reserved = reserved | (0 << 31);
+		} else {
+			reserved = reserved | (1 << 31);
+		}
+		this.toOnion.write(reserved);
+		this.toOnion.flush();
+
+		//32-bit request ID
+		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
+		this.toOnion.write(requestIDBytes);
+		this.toOnion.flush();
+
+		//write decrypted payload
+		this.toOnion.write(decPayloadWithOrigHash);
+		this.toOnion.flush();
+
+	}
+
 
 	public void handleSessionClose() throws Exception {
 		// read 16-bit reserved field
@@ -615,6 +666,7 @@ public class PeerOnionAuth {
 
 		// remove corresponding session key from the hashmap
 		this.sessionKeyMap.remove(sessionID);
+		this.sessionTypeMap.remove(sessionID);
 	}
 
 	//TODO
@@ -714,6 +766,13 @@ public class PeerOnionAuth {
 			payload = this.decrypt(sessionKeys.get(i), payload);
 		}
 		return payload;
+	}
+
+	// Hashes the payload using SHA-256; returns a 256-bit value
+	private byte[] hash(byte[] payload) {
+		MessageDigest md = MessageDigest.getInstance("SHA-256");
+		md.update(payload);
+		return md.digest();
 	}
 
 }
