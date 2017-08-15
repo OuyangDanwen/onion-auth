@@ -17,20 +17,24 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 
 public class PeerOnionAuth {
-	private DataOutputStream toOnion;
-	private DataInputStream fromOnion;
+
+	// Connection
 	private ServerSocket welcomeSkt;  // wait for sender to connect
 	private Socket skt;
+	private DataOutputStream toOnion;
+	private DataInputStream fromOnion;
+	
+	// Crypto
 	private PrivateKey dhPri;
 	private PublicKey dhPub;
-	private KeyFactory rsaKeyFactory;
-	private MessageDigest sha256;
-	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
-	private SecureRandom prng;
-	private PublicKey peerHostkey;
 	private PrivateKey rsaPri;
 	private PublicKey rsaPub;
+	private KeyFactory rsaKeyFactory;
+	private MessageDigest sha256;
+	private SecureRandom prng;
+	private PublicKey peerHostkey;
 
+	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
 	private int requestID = 0;
 
 	public PeerOnionAuth() throws Exception {
@@ -77,7 +81,7 @@ public class PeerOnionAuth {
 		int typeVal = new BigInteger(typeBytes).intValue();
 		MessageType type = MessageType.values()[typeVal];
 
-		switch(type) {
+		switch (type) {
 			case AUTH_SESSION_START: 
 				handleAuthStart(size);
 				break;
@@ -103,6 +107,8 @@ public class PeerOnionAuth {
 				break;
 			case AUTH_SESSION_CLOSE:
 				handleSessionClose();
+				break;
+			default:
 				break;
 		}
 
