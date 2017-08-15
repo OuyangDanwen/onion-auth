@@ -503,7 +503,7 @@ public class PeerOnionAuth {
 		//get session key
 		SecretKeySpec sessionKey = sessionKeyMap.get(sessionID);
 		if (sessionKey == null) {
-			this.sendAuthError(requestID);
+			this.sendAuthError(MessageType.AUTH_CIPHER_ENCRYPT.getVal(), requestID, "");
 		}
 		
 		byte[] encPayload = this.encrypt(sessionKey, payload);
@@ -564,7 +564,7 @@ public class PeerOnionAuth {
 		byte[] payload = new byte[size - 14 - 32];
 		this.fromOnion.read(payload, 0, payload.length);
 		if (sessionKey == null) {
-			this.sendAuthError(requestID);
+			this.sendAuthError(MessageType.AUTH_CIPHER_DECRYPT.getVal(), requestID, "");
 		}
 
 		// read hash value of original cleartext payload
@@ -574,8 +574,12 @@ public class PeerOnionAuth {
 		// if the decryption fails, send AUTH ERROR message instead
 		try {
 			decPayload = this.decrypt(sessionKey, payload);
+		} catch (BadPaddingException e) {
+			this.sendAuthError(MessageType.AUTH_CIPHER_DECRYPT.getVal(), requestID, "BadPaddingException");
+		} catch (IllegalBlockSizeException e) {
+			this.sendAuthError(MessageType.AUTH_CIPHER_DECRYPT.getVal(), requestID, "IllegalBlockSizeException");
 		} catch (Exception e) {
-			this.sendAuthError(requestID);
+			this.sendAuthError(MessageType.AUTH_CIPHER_DECRYPT.getVal(), requestID, "");
 		}
 
 		// append the hash of the cleartext to the end of the decrypted payload
@@ -643,7 +647,7 @@ public class PeerOnionAuth {
 	}
 
 	//TODO
-	private void sendAuthError(int requestID) throws Exception {
+	private void sendAuthError(int messageType, int requestID, String exceptionType) throws Exception {
 		//16-bit size
 		int size = 12;
 		byte[] sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
@@ -664,6 +668,25 @@ public class PeerOnionAuth {
 		byte[] requestIDBytes = ByteBuffer.allocate(4).putInt(requestID).array();
 		this.toOnion.write(requestIDBytes);
 		this.toOnion.flush();
+
+		// message type to which the error message corresponds to
+		byte[] errorMsgType = ByteBuffer.allocate(4).putInt(messageType).array();
+		this.toOnion.write(Arrays.copyOfRange(errorMsgType, 2, 4));
+		this.toOnion.flush();
+
+		// optional additional message depending on the exception type
+		if (!exceptionType.equals("")) {
+			byte[] exceptionMsgBytes;
+			if (exceptionType.equals("BadPaddingException")) {
+				String exceptionMsg = "Data is not padded properly";
+				exceptionMsgBytes = exceptionMsg.toBytes();
+			} else if (exceptionType.equals("IllegalBlockSizeException")) {
+				String exceptionMsg = "Length of data provided does not match the size of the block cipher";
+				exceptionMsgBytes = exceptionMsg.toBytes();
+			} 
+			this.toOnion.write(exceptionMsgBytes);
+			this.toOnion.flush();
+		}
 	}
 
 
@@ -701,7 +724,8 @@ public class PeerOnionAuth {
 	}
 
 	//encrypt with a random IV in GCM mode
-	private byte[] encrypt(SecretKeySpec sessionKey, byte[] payload) throws Exception {
+	private byte[] encrypt(SecretKeySpec sessionKey, byte[] payload) throws 
+		BadPaddingException, IllegalBlockSizeException, GeneralSecurityException {
 		//generate a random IV
 		byte[] iv = new byte[12];
 		new Random().nextBytes(iv);
@@ -716,7 +740,8 @@ public class PeerOnionAuth {
 	}
 
 	//decrypt with a given IV in GCM mode
-	private byte[] decrypt(SecretKeySpec sessionKey, byte[] payload) throws Exception {
+	private byte[] decrypt(SecretKeySpec sessionKey, byte[] payload) throws 
+		BadPaddingException, IllegalBlockSizeException, GeneralSecurityException {
 		//read IV from payload
 		byte[] iv = new byte[12];
 		System.arraycopy(payload, 0, iv, 0, 12);
