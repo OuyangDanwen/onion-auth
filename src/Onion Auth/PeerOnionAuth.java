@@ -17,13 +17,13 @@ import java.security.KeyPairGenerator;
 
 public class PeerOnionAuth {
 
-	// Connection
+	//connection
 	private ServerSocket welcomeSkt;  // wait for sender to connect
 	private Socket skt;
 	private DataOutputStream toOnion;
 	private DataInputStream fromOnion;
 	
-	// Crypto
+	//crypto
 	private PrivateKey dhPri;
 	private PublicKey dhPub;
 	private PrivateKey rsaPri;
@@ -32,9 +32,7 @@ public class PeerOnionAuth {
 	private MessageDigest sha256;
 	private SecureRandom prng;
 	private PublicKey peerHostkey;
-
 	private HashMap<Integer, SecretKeySpec> sessionKeyMap; // map session ID to session key
-	private int requestID = 0;
 
 	//constructor
 	public PeerOnionAuth() throws Exception {
@@ -121,7 +119,6 @@ public class PeerOnionAuth {
 	//										API METHODS	
 	// ========================================================================================
 
-
 	public void handleAuthStart(int size) throws Exception {
 		//read 32-bit reserved field
 		byte[] reservedBytes = new byte[4];
@@ -182,7 +179,6 @@ public class PeerOnionAuth {
 		//handshake payload
 		this.toOnion.write(dhPubBytes);
 		this.toOnion.flush();
-
 	}
 
 	public void handleIncomingHS1(int size) throws Exception {
@@ -304,7 +300,6 @@ public class PeerOnionAuth {
 			System.out.println("Handshake payload size matches, okay to proceed!");
 		}
 
-
 		//generate common session key
 		SecretKeySpec aesKeySpec = this.generateCommonSecretKey(peerDhPub);
 
@@ -335,8 +330,6 @@ public class PeerOnionAuth {
 		//add the session key to the key map
 		this.sessionKeyMap.put(sessionID, aesKeySpec);
 	}
-
-
 
 	public void handleLayerEncrypt(int size) throws Exception {
 		//read 16-bit reserved field
@@ -379,7 +372,6 @@ public class PeerOnionAuth {
 		System.arraycopy(hashOrigPayload, 0, encPayloadWithOrigHash, encPayload.length, hashOrigPayload.length);
 
 		this.sendLayerEncryptRESP(requestID, encPayloadWithOrigHash);
-
 	}
 
 	private void sendLayerEncryptRESP(int requestID, byte[] encPayloadWithOrigHash) throws Exception {
@@ -407,7 +399,6 @@ public class PeerOnionAuth {
 		//write encrypted payload
 		this.toOnion.write(encPayloadWithOrigHash);
 		this.toOnion.flush();
-
 	}
 
 	public void handleLayerDecrypt(int size) throws Exception {
@@ -472,7 +463,6 @@ public class PeerOnionAuth {
 		//write decrypted payload
 		this.toOnion.write(decPayload);
 		this.toOnion.flush();
-
 	}
 
 	public void handleCipherEncrypt(int size, int flag) throws Exception {
@@ -634,7 +624,6 @@ public class PeerOnionAuth {
 
 	}
 
-
 	public void handleSessionClose() throws Exception {
 		// read 16-bit reserved field
 		byte[] reservedBytes = new byte[2];
@@ -691,10 +680,10 @@ public class PeerOnionAuth {
 		}
 	}
 
-
 	// ========================================================================================
 	//										HELPER METHODS	
 	// ========================================================================================
+
 	//generate a Diffie Hellman public-private key pair with key length of 2048 bits
 	private void generateDHKeyPair() throws Exception {
 		KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("DH");
@@ -777,5 +766,4 @@ public class PeerOnionAuth {
 		this.sha256.reset();
 		return digest;
 	}
-
 }

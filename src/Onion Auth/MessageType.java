@@ -17,5 +17,4 @@ public enum MessageType {
 		public int getVal() {
 			return this.val;
 		}
-
 	}
